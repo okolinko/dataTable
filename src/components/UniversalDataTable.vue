@@ -59,13 +59,25 @@
 
           <Popover ref="columnsPopover">
             <div class="flex flex-column gap-2 p-1 max-h-popover">
+              <div class="flex align-items-center m-2 pb-2 border-bottom-1 surface-border">
+                <Checkbox
+                    v-model="isScrollEnabled"
+                    :binary="true"
+                    inputId="toggle-top-scroll"
+                    @change="handleScrollToggle"
+                />
+                <label for="toggle-top-scroll" class="ml-2 font-bold cursor-pointer select-none text-primary">
+                  Верхній скрол
+                  </label>
+              </div>
+
               <div v-for="col in columnsState" :key="col.name" class="flex align-items-center m-2">
                 <Checkbox
                     v-model="col.visible"
                     :binary="true"
                     :inputId="'col-' + col.name"
                     :disabled="col.name === 'actions'"
-                    @change="saveStateToStorage"
+                    @change="onColumnVisibilityChange"
                 />
                 <label :for="'col-' + col.name" class="ml-2 cursor-pointer select-none">{{ col.title }}</label>
               </div>
@@ -181,47 +193,58 @@
       </div>
     </div>
 
-    <DataTable
-        :value="items"
-        lazy
-        paginator
-        :rows="lazyParams.rows"
-        :totalRecords="totalRecords"
-        :loading="loading"
-        :first="dtFirstOffset"
-        @page="onPage($event)"
-        @sort="onSort($event)"
-        :sortField="lazyParams.sortField"
-        :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
-        removableSort
-        paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-        :rowsPerPageOptions="effectiveRowsPerPageOptions"
-        currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
+    <div
+        v-if="isScrollEnabled"
+        ref="topScrollContainer"
+        class="top-scrollbar-container"
+        @scroll="syncTopToTable"
     >
-      <template v-for="col in columnsState" :key="col.name">
-        <Column
-            v-if="col.visible"
-            :field="col.name"
-            :header="col.title"
-            :sortable="col.sortable || false"
-            :class="col.attributes?.class || ''"
-        >
-          <template #body="slotProps">
-            <template v-if="typeof col.value === 'function'">
-              <span v-html="col.value(slotProps.data)"></span>
+      <div :style="{ width: tableInnerWidth + 'px' }" class="top-scrollbar-filler"></div>
+    </div>
+
+    <div ref="dtWrapper" class="dt-responsive-wrapper">
+      <DataTable
+          :value="items"
+          lazy
+          paginator
+          :rows="lazyParams.rows"
+          :totalRecords="totalRecords"
+          :loading="loading"
+          :first="dtFirstOffset"
+          @page="onPage($event)"
+          @sort="onSort($event)"
+          :sortField="lazyParams.sortField"
+          :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
+          removableSort
+          paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+          :rowsPerPageOptions="effectiveRowsPerPageOptions"
+          currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
+      >
+        <template v-for="col in columnsState" :key="col.name">
+          <Column
+              v-if="col.visible"
+              :field="col.name"
+              :header="col.title"
+              :sortable="col.sortable || false"
+              :class="col.attributes?.class || ''"
+          >
+            <template #body="slotProps">
+              <template v-if="typeof col.value === 'function'">
+                <span v-html="col.value(slotProps.data)"></span>
+              </template>
+              <template v-else>
+                {{ slotProps.data[col.name] }}
+              </template>
             </template>
-            <template v-else>
-              {{ slotProps.data[col.name] }}
-            </template>
-          </template>
-        </Column>
-      </template>
-    </DataTable>
+          </Column>
+        </template>
+      </DataTable>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed, watch, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, reactive, computed, watch, nextTick } from 'vue';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import InputText from 'primevue/inputtext';
@@ -248,7 +271,8 @@ const props = defineProps({
   defaultOrder: { type: Object, default: () => ({}) },
   showDownload: { type: Boolean, default: false },
   filtersExpanded: { type: Boolean, default: true },
-  rowsPerPageOptions: { type: Array, default: () => [10, 25, 50] }
+  rowsPerPageOptions: { type: Array, default: () => [10, 25, 50] },
+  scrollable: { type: Boolean, default: true } // Проп для базового вмикання/вимикання
 });
 
 const effectiveRequestUrl = computed(() => externalConfig.value?.requestUrl || props.requestUrl);
@@ -259,6 +283,8 @@ const effectiveOrder = computed(() => externalConfig.value?.order || props.defau
 const effectiveShowDownload = computed(() => externalConfig.value?.showDownload ?? props.showDownload);
 const effectiveFiltersExpanded = computed(() => externalConfig.value?.filtersExpanded ?? props.filtersExpanded);
 const effectiveRowsPerPageOptions = computed(() => externalConfig.value?.rowsPerPageOptions || props.rowsPerPageOptions);
+const effectiveScrollable = computed(() => externalConfig.value?.scrollable ?? props.scrollable);
+
 const dtFirstOffset = computed(() => (lazyParams.value.page - 1) * lazyParams.value.rows);
 const STORAGE_KEY = computed(() => `udt_state_${effectiveStorageKey.value}`);
 
@@ -275,6 +301,14 @@ const columnsState = ref([]);
 const filtersState = ref([]);
 const activeFilters = reactive({});
 const lazyParams = ref({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
+
+// --- РЕФИ ТА СТАН ДЛЯ ПОДВІЙНОГО СКРОЛУ ---
+const isScrollEnabled = ref(true);
+const topScrollContainer = ref(null);
+const dtWrapper = ref(null);
+const tableInnerWidth = ref(0);
+let tableScrollElement = null;
+let resizeObserver = null;
 
 let isInitializing = false;
 
@@ -302,9 +336,19 @@ const initState = () => {
 
   const savedState = loadStateFromStorage();
   const defaultRows = effectiveRowsPerPageOptions.value?.[0] || 10;
+
   isFiltersPanelOpen.value = savedState && savedState.isFiltersPanelOpen !== undefined
       ? savedState.isFiltersPanelOpen
       : effectiveFiltersExpanded.value;
+
+  // Отримуємо збережений стан скролу (якщо немає – беремо з конфігу)
+  if (externalConfig.value && externalConfig.value.scrollable !== undefined) {
+    isScrollEnabled.value = externalConfig.value.scrollable;
+  } else if (savedState && savedState.isScrollEnabled !== undefined) {
+    isScrollEnabled.value = savedState.isScrollEnabled;
+  } else {
+    isScrollEnabled.value = effectiveScrollable.value;
+  }
 
   columnsState.value = effectiveColumns.value.map(col => {
     const savedCol = savedState?.columns?.find(c => c.name === col.name);
@@ -341,6 +385,7 @@ const initState = () => {
 
   nextTick(() => {
     isInitializing = false;
+    setupScrollSync();
   });
 };
 
@@ -371,6 +416,7 @@ const saveStateToStorage = () => {
 
   const stateToSave = {
     isFiltersPanelOpen: isFiltersPanelOpen.value,
+    isScrollEnabled: isScrollEnabled.value,
     lazyParams: {
       page: lazyParams.value.page,
       rows: lazyParams.value.rows,
@@ -454,6 +500,11 @@ const loadData = async () => {
     if (data.results) {
       items.value = data.results.list;
       totalRecords.value = data.results.count;
+
+      // Перераховуємо ширину скролу після оновлення даних таблиці
+      nextTick(() => {
+        updateScrollDimensions();
+      });
     }
   } catch (error) {
     console.error("Помилка завантаження даних:", error);
@@ -496,6 +547,95 @@ const exportData = async () => {
 const toggleColumnsPopover = (event) => { columnsPopover.value.toggle(event); };
 const toggleFiltersPopover = (event) => { filtersPopover.value.toggle(event); };
 
+// --- СИНХРОНІЗАЦІЯ СКРОЛУ (ЛОГІКА) ---
+
+const updateScrollDimensions = () => {
+  if (!isScrollEnabled.value || !dtWrapper.value) return;
+
+  // Шукаємо внутрішній scrollable елемент PrimeVue таблиці (.p-datatable-scrollbar або .p-datatable-table-container)
+  const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') || dtWrapper.value.querySelector('.p-datatable-scrollbar');
+  const tableEl = dtWrapper.value.querySelector('.p-datatable-table');
+
+  if (innerTableContainer && tableEl) {
+    tableScrollElement = innerTableContainer;
+    tableInnerWidth.value = tableEl.offsetWidth;
+
+    // Додаємо слухач події скролу до самої таблиці (якщо ще немає)
+    tableScrollElement.removeEventListener('scroll', syncTableToTop);
+    tableScrollElement.addEventListener('scroll', syncTableToTop);
+
+    // Вирівнюємо початкову позицію
+    nextTick(() => {
+      if (topScrollContainer.value) {
+        topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
+      }
+    });
+  }
+};
+
+let isSyncingTop = false;
+let isSyncingTable = false;
+
+const syncTopToTable = () => {
+  if (!tableScrollElement || isSyncingTable) return;
+  isSyncingTop = true;
+  tableScrollElement.scrollLeft = topScrollContainer.value.scrollLeft;
+  setTimeout(() => { isSyncingTop = false; }, 20);
+};
+
+const syncTableToTop = () => {
+  if (!topScrollContainer.value || isSyncingTop) return;
+  isSyncingTable = true;
+  topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
+  setTimeout(() => { isSyncingTable = false; }, 20);
+};
+
+const setupScrollSync = () => {
+  if (!isScrollEnabled.value) {
+    destroyScrollSync();
+    return;
+  }
+
+  nextTick(() => {
+    updateScrollDimensions();
+
+    // Слідкуємо за ресайзом вікна/елемента, щоб динамічно змінювати ширину фейк-скролу
+    if (dtWrapper.value && !resizeObserver) {
+      resizeObserver = new ResizeObserver(() => {
+        updateScrollDimensions();
+      });
+      resizeObserver.observe(dtWrapper.value);
+    }
+  });
+};
+
+const destroyScrollSync = () => {
+  if (tableScrollElement) {
+    tableScrollElement.removeEventListener('scroll', syncTableToTop);
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+};
+
+const handleScrollToggle = () => {
+  saveStateToStorage();
+  if (isScrollEnabled.value) {
+    setupScrollSync();
+  } else {
+    destroyScrollSync();
+  }
+};
+
+const onColumnVisibilityChange = () => {
+  saveStateToStorage();
+  // Потрібно дати PrimeVue час приховати/показати колонку перед перерахунком ширини
+  setTimeout(() => {
+    updateScrollDimensions();
+  }, 50);
+};
+
 onMounted(() => {
   document.addEventListener('datatable:setConfig', (e) => {
     externalConfig.value = e.detail;
@@ -508,6 +648,10 @@ onMounted(() => {
     initState();
     loadData();
   }
+});
+
+onBeforeUnmount(() => {
+  destroyScrollSync();
 });
 
 const onPage = (event) => {
@@ -524,7 +668,6 @@ const onSort = (event) => {
   loadData();
 };
 
-// === ОНОВЛЕНА ЛОГІКА ДЕБАУНСУ ТА МИТТЄВОГО СКИНУТИ ФІЛЬТРІВ ===
 let filterTimeout = null;
 
 const triggerFilterApply = () => {
@@ -564,6 +707,7 @@ const clearAllFilters = () => {
 .mb-4 { margin-bottom: 1.5rem; }
 .mb-3 { margin-bottom: 1rem; }
 .ml-2 { margin-left: 0.5rem; }
+.pb-2 { padding-bottom: 0.5rem; }
 .flex { display: flex; }
 .flex-column { flex-direction: column; }
 .align-items-center { align-items: center; }
@@ -573,8 +717,11 @@ const clearAllFilters = () => {
 .px-3 { padding-left: 1rem !important; padding-right: 1rem !important; }
 .pt-3 { padding-top: 1rem; }
 .border-top-1 { border-top: 1px solid #dee2e6; }
+.border-bottom-1 { border-bottom: 1px solid #dee2e6; }
 .cursor-pointer { cursor: pointer; }
 .select-none { user-select: none; }
+.font-bold { font-weight: bold; }
+.text-primary { color: #21cc51 !important; /* Зелений бренд-акцент для чекбокса скролу */ }
 .bg-light-gray { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 0.75rem; border-radius: 6px; }
 .text-center { text-align: center; }
 .text-muted { color: #6c757d; font-size: 14px; }
@@ -592,6 +739,38 @@ const clearAllFilters = () => {
 .filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
 .filter-field { display: flex; flex-direction: column; }
 .filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; }
+
+/* СТИЛІ ДЛЯ СИНХРОННОГО ВЕРХНЬОГО СКРОЛУ */
+.top-scrollbar-container {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 12px;
+  margin-bottom: 4px;
+}
+/* Тонкий красивий скролбар, щоб не займав багато місця */
+.top-scrollbar-container::-webkit-scrollbar {
+  height: 8px;
+}
+.top-scrollbar-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+.top-scrollbar-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+.top-scrollbar-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+.top-scrollbar-filler {
+  height: 1px;
+}
+.dt-responsive-wrapper {
+  width: 100%;
+  overflow: hidden;
+}
+
 :deep(.success) { color: #0a570a; font-weight: 600; }
 :deep(.failed) { color: #bb0e4a; font-weight: 600; }
 :deep(.actions-column) { width: max-content; }

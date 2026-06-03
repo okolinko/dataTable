@@ -68,7 +68,7 @@
                 />
                 <label for="toggle-top-scroll" class="ml-2 font-bold cursor-pointer select-none text-primary">
                   Верхній скрол
-                  </label>
+                </label>
               </div>
 
               <div v-for="col in columnsState" :key="col.name" class="flex align-items-center m-2">
@@ -152,6 +152,7 @@
                 :placeholder="filter.placeholder || 'Введіть число...'"
             />
 
+
             <DatePicker
                 v-else-if="filter.type === 'year'"
                 :key="'year-' + filter.name"
@@ -182,7 +183,7 @@
           <Button
               label="Скинути всі фільтри"
               icon="pi pi-filter-slash"
-              class="p-button-outlined p-button-danger p-button-sm"
+              class="p-button-outlined p-button-secondary p-button-sm"
               @click="clearAllFilters"
           />
         </div>
@@ -302,14 +303,31 @@ const filtersState = ref([]);
 const activeFilters = reactive({});
 const lazyParams = ref({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
 
+// --- РЕФИ ТА СТАН ДЛЯ ПОДВІЙНОГО СКРОЛУ ---
 const isScrollEnabled = ref(true);
 const topScrollContainer = ref(null);
 const dtWrapper = ref(null);
 const tableInnerWidth = ref(0);
 let tableScrollElement = null;
 let resizeObserver = null;
+
 let isInitializing = false;
-let filterTimeout = null;
+
+const onIntegerFilterInput = (event, filterName) => {
+  // event.value — вже розпарсоване число від InputNumber під час введення
+  const parsedValue = event.value !== undefined && event.value !== null && event.value !== ''
+      ? Number(event.value)
+      : null;
+
+  // Примусово оновлюємо activeFilters одразу, не чекаючи blur
+  activeFilters[filterName] = parsedValue;
+
+  clearTimeout(filterTimeout);
+  filterTimeout = setTimeout(() => {
+    triggerFilterApply();
+  }, 500); // debounce 500ms — зручніше для числового вводу
+};
+
 
 const loadStateFromStorage = () => {
   if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return null;
@@ -332,14 +350,18 @@ const formatDateToLocalString = (date) => {
 
 const initState = () => {
   isInitializing = true;
+
   const savedState = loadStateFromStorage();
   const defaultRows = effectiveRowsPerPageOptions.value?.[0] || 10;
 
-  isFiltersPanelOpen.value = savedState?.isFiltersPanelOpen ?? effectiveFiltersExpanded.value;
+  isFiltersPanelOpen.value = savedState && savedState.isFiltersPanelOpen !== undefined
+      ? savedState.isFiltersPanelOpen
+      : effectiveFiltersExpanded.value;
 
-  if (externalConfig.value?.scrollable !== undefined) {
+  // Отримуємо збережений стан скролу (якщо немає – беремо з конфігу)
+  if (externalConfig.value && externalConfig.value.scrollable !== undefined) {
     isScrollEnabled.value = externalConfig.value.scrollable;
-  } else if (savedState?.isScrollEnabled !== undefined) {
+  } else if (savedState && savedState.isScrollEnabled !== undefined) {
     isScrollEnabled.value = savedState.isScrollEnabled;
   } else {
     isScrollEnabled.value = effectiveScrollable.value;
@@ -365,11 +387,6 @@ const initState = () => {
     }
     else if (f.type === 'date_range' && Array.isArray(savedValue)) {
       activeFilters[f.name] = savedValue.map(d => d ? new Date(d) : null);
-    }
-    else if (f.type === 'integer') {
-      activeFilters[f.name] = savedValue !== undefined && savedValue !== null
-          ? Number(savedValue)
-          : null;
     }
     else {
       activeFilters[f.name] = savedValue !== undefined ? savedValue : '';
@@ -443,18 +460,10 @@ const getCleanedFilters = () => {
   const cleaned = {};
 
   filtersState.value.forEach(f => {
-    let val = activeFilters[f.name];
+    const val = activeFilters[f.name];
 
-    if (!f.visible) return;
+    if (f.visible && val !== '' && val !== null && val !== undefined) {
 
-    if (f.type === 'integer') {
-      if (val !== null && val !== undefined && val !== '') {
-        cleaned[f.name] = Number(val);
-      }
-      return;
-    }
-
-    if (val !== '' && val !== null && val !== undefined) {
       if (f.type === 'date' && val instanceof Date) {
         if (!isNaN(val.getTime())) {
           const offset = val.getTimezoneOffset();
@@ -478,6 +487,7 @@ const getCleanedFilters = () => {
       else {
         cleaned[f.name] = val;
       }
+
     }
   });
 
@@ -508,6 +518,7 @@ const loadData = async () => {
       items.value = data.results.list;
       totalRecords.value = data.results.count;
 
+      // Перераховуємо ширину скролу після оновлення даних таблиці
       nextTick(() => {
         updateScrollDimensions();
       });
@@ -550,65 +561,15 @@ const exportData = async () => {
   }
 };
 
-// ==================== ФІЛЬТРИ ====================
-const triggerFilterApply = () => {
-  lazyParams.value.page = 1;
-  saveStateToStorage();
-  loadData();
-};
+const toggleColumnsPopover = (event) => { columnsPopover.value.toggle(event); };
+const toggleFiltersPopover = (event) => { filtersPopover.value.toggle(event); };
 
-const onFilterInput = () => {
-  clearTimeout(filterTimeout);
-  filterTimeout = setTimeout(triggerFilterApply, 350);
-};
+// --- СИНХРОНІЗАЦІЯ СКРОЛУ (ЛОГІКА) ---
 
-const onIntegerFilterInput = (event, filterName) => {
-  // event.value — вже розпарсоване число від InputNumber під час введення
-  const parsedValue = event.value !== undefined && event.value !== null && event.value !== ''
-      ? Number(event.value)
-      : null;
-
-  // Примусово оновлюємо activeFilters одразу, не чекаючи blur
-  activeFilters[filterName] = parsedValue;
-
-  clearTimeout(filterTimeout);
-  filterTimeout = setTimeout(() => {
-    triggerFilterApply();
-  }, 500); // debounce 500ms — зручніше для числового вводу
-};
-
-
-const onFilterClear = () => {
-  clearTimeout(filterTimeout);
-  triggerFilterApply();
-};
-
-const onFilterDateUpdate = () => {
-  clearTimeout(filterTimeout);
-  triggerFilterApply();
-};
-
-const clearAllFilters = () => {
-  clearTimeout(filterTimeout);
-
-  Object.keys(activeFilters).forEach(key => {
-    const filter = filtersState.value.find(f => f.name === key);
-    if (filter?.type === 'integer') {
-      activeFilters[key] = null;
-    } else {
-      activeFilters[key] = '';
-    }
-  });
-
-  nextTick(() => {
-    triggerFilterApply();
-  });
-};
-
-// ==================== СКРОЛ ====================
 const updateScrollDimensions = () => {
   if (!isScrollEnabled.value || !dtWrapper.value) return;
 
+  // Шукаємо внутрішній scrollable елемент PrimeVue таблиці (.p-datatable-scrollbar або .p-datatable-table-container)
   const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') || dtWrapper.value.querySelector('.p-datatable-scrollbar');
   const tableEl = dtWrapper.value.querySelector('.p-datatable-table');
 
@@ -616,9 +577,11 @@ const updateScrollDimensions = () => {
     tableScrollElement = innerTableContainer;
     tableInnerWidth.value = tableEl.offsetWidth;
 
+    // Додаємо слухач події скролу до самої таблиці (якщо ще немає)
     tableScrollElement.removeEventListener('scroll', syncTableToTop);
     tableScrollElement.addEventListener('scroll', syncTableToTop);
 
+    // Вирівнюємо початкову позицію
     nextTick(() => {
       if (topScrollContainer.value) {
         topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
@@ -649,11 +612,24 @@ const setupScrollSync = () => {
     destroyScrollSync();
     return;
   }
-  nextTick(updateScrollDimensions);
+
+  nextTick(() => {
+    updateScrollDimensions();
+
+    // Слідкуємо за ресайзом вікна/елемента, щоб динамічно змінювати ширину фейк-скролу
+    if (dtWrapper.value && !resizeObserver) {
+      resizeObserver = new ResizeObserver(() => {
+        updateScrollDimensions();
+      });
+      resizeObserver.observe(dtWrapper.value);
+    }
+  });
 };
 
 const destroyScrollSync = () => {
-  if (tableScrollElement) tableScrollElement.removeEventListener('scroll', syncTableToTop);
+  if (tableScrollElement) {
+    tableScrollElement.removeEventListener('scroll', syncTableToTop);
+  }
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;
@@ -662,13 +638,19 @@ const destroyScrollSync = () => {
 
 const handleScrollToggle = () => {
   saveStateToStorage();
-  if (isScrollEnabled.value) setupScrollSync();
-  else destroyScrollSync();
+  if (isScrollEnabled.value) {
+    setupScrollSync();
+  } else {
+    destroyScrollSync();
+  }
 };
 
 const onColumnVisibilityChange = () => {
   saveStateToStorage();
-  setTimeout(updateScrollDimensions, 50);
+  // Потрібно дати PrimeVue час приховати/показати колонку перед перерахунком ширини
+  setTimeout(() => {
+    updateScrollDimensions();
+  }, 50);
 };
 
 onMounted(() => {
@@ -701,6 +683,39 @@ const onSort = (event) => {
   lazyParams.value.sortOrder = event.sortOrder === 1 ? 'asc' : 'desc';
   saveStateToStorage();
   loadData();
+};
+
+let filterTimeout = null;
+
+const triggerFilterApply = () => {
+  lazyParams.value.page = 1;
+  saveStateToStorage();
+  loadData();
+};
+
+const onFilterInput = () => {
+  clearTimeout(filterTimeout);
+  filterTimeout = setTimeout(() => {
+    triggerFilterApply();
+  }, 400);
+};
+
+const onFilterClear = () => {
+  clearTimeout(filterTimeout);
+  triggerFilterApply();
+};
+
+const onFilterDateUpdate = () => {
+  clearTimeout(filterTimeout);
+  triggerFilterApply();
+};
+
+const clearAllFilters = () => {
+  clearTimeout(filterTimeout);
+  Object.keys(activeFilters).forEach(key => {
+    activeFilters[key] = '';
+  });
+  triggerFilterApply();
 };
 </script>
 
@@ -741,6 +756,11 @@ const onSort = (event) => {
 .filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
 .filter-field { display: flex; flex-direction: column; }
 .filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; }
+.p-button-outlined.p-button-secondary:not(:disabled):hover {
+  background: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
 
 /* СТИЛІ ДЛЯ СИНХРОННОГО ВЕРХНЬОГО СКРОЛУ */
 .top-scrollbar-container {

@@ -66,10 +66,10 @@
                     @change="handleScrollToggle"
                 />
                 <label for="toggle-top-scroll" class="ml-2 font-bold cursor-pointer select-none text-primary">
-                  Верхній скрол
+                  Верхній/нижній скрол
                 </label>
               </div>
-              <div v-for="col in columnsState" :key="col.name" class="flex align-items-center m-2">
+              <div v-for="col in columnsState" :key="col.name || col.title" class="flex align-items-center m-2">
                 <Checkbox
                     v-model="col.visible"
                     :binary="true"
@@ -122,7 +122,6 @@
                 :maxSelectedLabels="3"
             />
 
-            <!-- ФІЧ: RANGE — виправлено хендлери @input та @clear -->
             <div v-else-if="filter.type === 'range'" class="flex gap-2">
               <InputNumber
                   :inputId="'field-' + filter.name + '_from'"
@@ -227,6 +226,7 @@
       </div>
     </div>
 
+    <!-- Верхній кастомний скрол -->
     <div
         v-if="isScrollEnabled"
         ref="topScrollContainer"
@@ -264,17 +264,14 @@
               :style="{ width: col.width || 'auto' }"
           >
             <template #body="slotProps">
-              <!-- Звичайна функція (як було раніше) -->
               <template v-if="typeof col.value === 'function'">
                 <span v-html="col.value(slotProps.data)"></span>
               </template>
 
-              <!-- НОВИЙ ТИП: Computed колонка (об'єднання полів) -->
               <template v-else-if="col.type === 'computed' && col.fields && Array.isArray(col.fields)">
                 {{ col.fields.map(f => slotProps.data[f]).filter(Boolean).join(' ') }}
               </template>
 
-              <!-- Звичайне поле -->
               <template v-else>
                 {{ slotProps.data[col.name] }}
               </template>
@@ -283,6 +280,17 @@
         </template>
       </DataTable>
     </div>
+
+    <!-- Нижній кастомний скрол -->
+    <div
+        v-if="isScrollEnabled"
+        ref="bottomScrollContainer"
+        class="bottom-scrollbar-container"
+        @scroll="syncBottomToTable"
+    >
+      <div :style="{ width: tableInnerWidth + 'px' }" class="bottom-scrollbar-filler"></div>
+    </div>
+
   </div>
 </template>
 
@@ -351,6 +359,7 @@ const lazyParams = ref({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' }
 
 const isScrollEnabled = ref(true);
 const topScrollContainer = ref(null);
+const bottomScrollContainer = ref(null);
 const dtWrapper = ref(null);
 const tableInnerWidth = ref(0);
 let tableScrollElement = null;
@@ -369,8 +378,6 @@ const onIntegerFilterInput = (event, filterName) => {
 };
 
 // ─── ВИПРАВЛЕНІ ХЕНДЛЕРИ ДЛЯ RANGE ──────────────────────────────────────────
-// БАГ 1 ВИПРАВЛЕНО: примусово оновлюємо вкладений проп реактивного об'єкта
-// через явне присвоєння, а не покладаємось на v-model у PrimeVue InputNumber
 const onRangeFilterInput = (event, filterName, field) => {
   const parsedValue = (event.value !== undefined && event.value !== null && event.value !== '')
       ? Number(event.value)
@@ -380,7 +387,6 @@ const onRangeFilterInput = (event, filterName, field) => {
   filterTimeout = setTimeout(() => { triggerFilterApply(); }, 500);
 };
 
-// БАГ 2 ВИПРАВЛЕНО (частково): окремий clear щоб не писати '' у вкладений об'єкт
 const onRangeFilterClear = (filterName, field) => {
   activeFilters[filterName][field] = null;
   clearTimeout(filterTimeout);
@@ -427,7 +433,6 @@ const initState = () => {
 
   columnsState.value = effectiveColumns.value.map(col => {
     if (col.type === 'computed') {
-      // Computed колонки завжди видимі, бо в них немає окремого "name" для збереження
       return { ...col, visible: true };
     } else {
       const savedCol = savedState?.columns?.find(c => c.name === col.name);
@@ -453,7 +458,6 @@ const initState = () => {
     } else if (f.type === 'date_range' && Array.isArray(savedValue)) {
       activeFilters[f.name] = savedValue.map(d => d ? new Date(d) : null);
     } else if (f.type === 'range') {
-      // Завжди ініціалізуємо як об'єкт — навіть якщо savedValue відсутній
       activeFilters[f.name] = {
         from: savedValue?.from ?? null,
         to: savedValue?.to ?? null
@@ -499,7 +503,6 @@ const saveStateToStorage = () => {
     } else if (Array.isArray(val)) {
       cleanedActiveFilters[key] = val.map(d => d instanceof Date ? d.toISOString() : d);
     } else if (val !== null && typeof val === 'object' && 'from' in val && 'to' in val) {
-      // Зберігаємо range як об'єкт { from, to }
       cleanedActiveFilters[key] = { from: val.from, to: val.to };
     } else {
       cleanedActiveFilters[key] = val;
@@ -556,7 +559,6 @@ const getCleanedFilters = () => {
     } else if (f.type === 'multiselect' && Array.isArray(val) && val.length > 0) {
       cleaned[f.name] = val;
     } else if (f.type === 'range') {
-      // БАГ 3 ВИПРАВЛЕНО: перевіряємо !== null замість falsy (0 є валідним значенням!)
       const from = val?.from;
       const to = val?.to;
       if (from !== null && from !== undefined) {
@@ -638,6 +640,12 @@ const toggleColumnsPopover = (event) => { columnsPopover.value.toggle(event); };
 const toggleFiltersPopover = (event) => { filtersPopover.value.toggle(event); };
 
 // ─── СКРОЛ СИНХРОНІЗАЦІЯ ─────────────────────────────────────────────────────
+
+// Прапорці для запобігання циклічного спрацювання між трьома скролами
+let isSyncingTop = false;
+let isSyncingBottom = false;
+let isSyncingTable = false;
+
 const updateScrollDimensions = () => {
   if (!isScrollEnabled.value || !dtWrapper.value) return;
   const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container')
@@ -646,30 +654,57 @@ const updateScrollDimensions = () => {
   if (innerTableContainer && tableEl) {
     tableScrollElement = innerTableContainer;
     tableInnerWidth.value = tableEl.offsetWidth;
-    tableScrollElement.removeEventListener('scroll', syncTableToTop);
-    tableScrollElement.addEventListener('scroll', syncTableToTop);
+
+    // Знімаємо старий слухач і вішаємо новий (єдина функція для обох кастомних скролів)
+    tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
+    tableScrollElement.addEventListener('scroll', syncTableToScrollbars);
+
     nextTick(() => {
       if (topScrollContainer.value) {
         topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
+      }
+      if (bottomScrollContainer.value) {
+        bottomScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
       }
     });
   }
 };
 
-let isSyncingTop = false;
-let isSyncingTable = false;
-
+// Верхній кастомний скрол -> таблиця + нижній кастомний скрол
 const syncTopToTable = () => {
-  if (!tableScrollElement || isSyncingTable) return;
+  if (!tableScrollElement || isSyncingTable || isSyncingBottom) return;
   isSyncingTop = true;
-  tableScrollElement.scrollLeft = topScrollContainer.value.scrollLeft;
+  const pos = topScrollContainer.value.scrollLeft;
+  tableScrollElement.scrollLeft = pos;
+  if (bottomScrollContainer.value) {
+    bottomScrollContainer.value.scrollLeft = pos;
+  }
   setTimeout(() => { isSyncingTop = false; }, 20);
 };
 
-const syncTableToTop = () => {
-  if (!topScrollContainer.value || isSyncingTop) return;
+// Нижній кастомний скрол -> таблиця + верхній кастомний скрол
+const syncBottomToTable = () => {
+  if (!tableScrollElement || isSyncingTable || isSyncingTop) return;
+  isSyncingBottom = true;
+  const pos = bottomScrollContainer.value.scrollLeft;
+  tableScrollElement.scrollLeft = pos;
+  if (topScrollContainer.value) {
+    topScrollContainer.value.scrollLeft = pos;
+  }
+  setTimeout(() => { isSyncingBottom = false; }, 20);
+};
+
+// Нативний скрол таблиці -> обидва кастомних скроли
+const syncTableToScrollbars = () => {
+  if (isSyncingTop || isSyncingBottom) return;
   isSyncingTable = true;
-  topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
+  const pos = tableScrollElement.scrollLeft;
+  if (topScrollContainer.value) {
+    topScrollContainer.value.scrollLeft = pos;
+  }
+  if (bottomScrollContainer.value) {
+    bottomScrollContainer.value.scrollLeft = pos;
+  }
   setTimeout(() => { isSyncingTable = false; }, 20);
 };
 
@@ -686,7 +721,7 @@ const setupScrollSync = () => {
 
 const destroyScrollSync = () => {
   if (tableScrollElement) {
-    tableScrollElement.removeEventListener('scroll', syncTableToTop);
+    tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
   }
   if (resizeObserver) {
     resizeObserver.disconnect();
@@ -756,12 +791,10 @@ const onFilterDateUpdate = () => {
   triggerFilterApply();
 };
 
-// БАГ 2 ВИПРАВЛЕНО: коректне скидання кожного типу фільтра
 const clearAllFilters = () => {
   clearTimeout(filterTimeout);
   effectiveFilters.value.forEach(f => {
     if (f.type === 'range') {
-      // Не замінюємо об'єкт на '' — скидаємо поля всередині
       activeFilters[f.name] = { from: null, to: null };
     } else if (f.type === 'multiselect') {
       activeFilters[f.name] = [];
@@ -813,16 +846,54 @@ const clearAllFilters = () => {
 .filter-field { display: flex; flex-direction: column; }
 .filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; }
 .p-button-outlined.p-button-secondary:not(:disabled):hover { background: #e2e8f0; border: 1px solid #e2e8f0; color: #334155; }
-.top-scrollbar-container { overflow-x: auto; overflow-y: hidden; margin-bottom: 4px; height: 13px; position: sticky; top: 0; left: 0; width: 100%; z-index: 1; display: block; }
+
+/* Верхній кастомний скрол */
+.top-scrollbar-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 4px;
+  height: 13px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+  display: block;
+}
 .top-scrollbar-container::-webkit-scrollbar { height: 9px; }
 .top-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
 .top-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
 .top-scrollbar-container::-webkit-scrollbar-thumb:hover { background: #6c6b6b; }
 .top-scrollbar-filler { height: 1px; }
+
+/* Нижній кастомний скрол */
+.bottom-scrollbar-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 4px;
+  height: 13px;
+  /* Прилипання до низу сторінки — задайте bottom: 0 або будь-яке потрібне значення */
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+  display: block;
+  /* Фон щоб скролбар не "висів" прозоро при прилипанні */
+  background: #ffffff;
+}
+.bottom-scrollbar-container::-webkit-scrollbar { height: 9px; }
+.bottom-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+.bottom-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
+.bottom-scrollbar-container::-webkit-scrollbar-thumb:hover { background: #6c6b6b; }
+.bottom-scrollbar-filler { height: 1px; }
+
 .dt-responsive-wrapper { width: 100%; overflow: hidden; }
 :deep(.success) { color: #0a570a; font-weight: 600; }
 :deep(.failed) { color: #bb0e4a; font-weight: 600; }
 :deep(.actions-column) { width: max-content; }
 :deep(.actions-column a svg) { fill: #244464; transition: fill 0.2s; margin-right: 5px; }
 :deep(.actions-column a svg:hover) { fill: #e8a51f; }
+:deep(.p-datatable-table-container)::-webkit-scrollbar {  display: none;}
+:deep(.p-datatable-table-container) {  -ms-overflow-style: none;  /* IE / Edge */  scrollbar-width: none;     /* Firefox */}
 </style>

@@ -3,7 +3,7 @@ import PrimeVue from 'primevue/config';
 import Aura from '@primevue/themes/aura';
 import { definePreset } from '@primevue/themes';
 
-import UniversalDataTable from './components/UniversalDataTable.vue'; // ← Переконайся, що шлях правильний
+import UniversalDataTable from './components/UniversalDataTable.vue';
 
 import 'primeicons/primeicons.css';
 
@@ -64,7 +64,7 @@ document.addEventListener('datatable:setConfig', (event) => {
         filtersConfig: config.filters || [],
         defaultOrder: config.order || {},
         showDownload: config.showDownload || false,
-        // Додай інші пропси, якщо потрібно
+        // інші пропси, якщо потрібно
     });
 
     app.use(PrimeVue, {

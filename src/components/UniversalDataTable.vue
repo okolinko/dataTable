@@ -880,9 +880,9 @@ onBeforeUnmount(() => {
 .border-left-0 { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 0 !important; }
 .p-segmented-button-group .p-button:first-child { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
 .filters-panel { background: #ffffff; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-.filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+.filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
 .filter-field { display: flex; flex-direction: column; }
-.filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; }
+.filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; min-height: 30px;}
 .p-button-outlined.p-button-secondary:not(:disabled):hover { background: #e2e8f0; border: 1px solid #e2e8f0; color: #334155; }
 
 /* Верхній кастомний скрол */
@@ -923,7 +923,7 @@ onBeforeUnmount(() => {
 
 .range-filter-wrapper {
   grid-column: span 2;
-  min-width: 220px;
+  min-width: 250px;
 }
 
 .range-filter-field {

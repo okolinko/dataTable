@@ -93,6 +93,7 @@
               v-for="filter in filtersState.filter(f => f.visible)"
               :key="filter.name"
               class="filter-field"
+              :class="{ 'range-filter-wrapper': filter.type === 'range' }"
           >
             <label :for="'field-' + filter.name">{{ filter.title }}</label>
 
@@ -122,25 +123,28 @@
                 :maxSelectedLabels="3"
             />
 
-            <div v-else-if="filter.type === 'range'" class="flex gap-2">
-              <InputNumber
-                  :inputId="'field-' + filter.name + '_from'"
-                  v-model="activeFilters[filter.name].from"
-                  :placeholder="filter.placeholderFrom || 'Від'"
-                  :useGrouping="false"
-                  showClear
-                  @input="(e) => onRangeFilterInput(e, filter.name, 'from')"
-                  @clear="() => onRangeFilterClear(filter.name, 'from')"
-              />
-              <InputNumber
-                  :inputId="'field-' + filter.name + '_to'"
-                  v-model="activeFilters[filter.name].to"
-                  :placeholder="filter.placeholderTo || 'До'"
-                  :useGrouping="false"
-                  showClear
-                  @input="(e) => onRangeFilterInput(e, filter.name, 'to')"
-                  @clear="() => onRangeFilterClear(filter.name, 'to')"
-              />
+            <div v-else-if="filter.type === 'range'" class="range-filter-field">
+              <div class="range-inputs">
+                <InputNumber
+                    :inputId="'field-' + filter.name + '_from'"
+                    v-model="activeFilters[filter.name].from"
+                    :placeholder="filter.placeholderFrom || 'Від'"
+                    :useGrouping="false"
+                    showClear
+                    @input="(e) => onRangeFilterInput(e, filter.name, 'from')"
+                    @clear="() => onRangeFilterClear(filter.name, 'from')"
+                />
+                <span class="range-separator">—</span>
+                <InputNumber
+                    :inputId="'field-' + filter.name + '_to'"
+                    v-model="activeFilters[filter.name].to"
+                    :placeholder="filter.placeholderTo || 'До'"
+                    :useGrouping="false"
+                    showClear
+                    @input="(e) => onRangeFilterInput(e, filter.name, 'to')"
+                    @clear="() => onRangeFilterClear(filter.name, 'to')"
+                />
+              </div>
             </div>
 
             <DatePicker
@@ -260,7 +264,10 @@
               :field="col.name"
               :header="col.title"
               :sortable="col.sortable || false"
-              :class="col.attributes?.class || ''"
+              :class="col.bodyClass || col.class || ''"
+              :headerClass="col.headerClass || ''"
+              :bodyClass="col.bodyClass || col.class || ''"
+              :footerClass="col.footerClass || ''"
               :style="{ width: col.width || 'auto' }"
           >
             <template #body="slotProps">
@@ -319,6 +326,11 @@ interface ColumnConfig {
   type?: 'computed';
   fields?: string[];
   value?: (data: any) => string;
+  // === Кастомні класи ===
+  class?: string;           // клас для тіла (td)
+  headerClass?: string;     // клас для заголовка (th)
+  bodyClass?: string;       // alias для class (більш зрозуміло)
+  footerClass?: string;     // якщо будеш використовувати футер
   attributes?: {
     class?: string;
   };
@@ -487,9 +499,19 @@ const initState = () => {
 
   // Columns
   columnsState.value = effectiveColumns.value.map((col: ColumnConfig) => {
-    if (col.type === 'computed') return { ...col, visible: true };
+    if (col.type === 'computed') {
+      return { ...col, visible: true };
+    }
+
     const savedCol = savedState?.columns?.find((c: any) => c.name === col.name);
-    return { ...col, visible: savedCol?.visible ?? (col.visible !== false) };
+
+    return {
+      ...col,
+      visible: savedCol?.visible ?? (col.visible !== false),
+      // зберігаємо класи
+      class: col.class || col.attributes?.class,
+      bodyClass: col.bodyClass || col.class,
+    };
   });
 
   // Filters
@@ -853,7 +875,7 @@ onBeforeUnmount(() => {
 .border-left-0 { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 0 !important; }
 .p-segmented-button-group .p-button:first-child { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
 .filters-panel { background: #ffffff; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-.filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
+.filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
 .filter-field { display: flex; flex-direction: column; }
 .filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; }
 .p-button-outlined.p-button-secondary:not(:disabled):hover { background: #e2e8f0; border: 1px solid #e2e8f0; color: #334155; }
@@ -893,6 +915,35 @@ onBeforeUnmount(() => {
   /* Фон щоб скролбар не "висів" прозоро при прилипанні */
   background: #ffffff;
 }
+
+.range-filter-wrapper {
+  grid-column: span 2;
+  min-width: 220px;
+}
+
+.range-filter-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+}
+
+.range-inputs .p-inputnumber {
+  flex: 1;
+}
+
+.range-separator {
+  color: #6c757d;
+  font-size: 1.3em;
+  padding: 0 6px;
+  align-self: center;
+}
+
 .bottom-scrollbar-container::-webkit-scrollbar { height: 9px; }
 .bottom-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
 .bottom-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }

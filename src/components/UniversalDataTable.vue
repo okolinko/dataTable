@@ -245,8 +245,8 @@
           :totalRecords="totalRecords"
           :loading="loading"
           :first="dtFirstOffset"
-          @page="onPage($event)"
-          @sort="onSort($event)"
+          @page="onPage"
+          @sort="onSort"
           :sortField="lazyParams.sortField"
           :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
           removableSort
@@ -294,7 +294,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, reactive, computed, watch, nextTick } from 'vue';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -307,8 +307,77 @@ import Popover from 'primevue/popover';
 import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import MultiSelect from 'primevue/multiselect';
-import ColumnGroup from 'primevue/columngroup';
-import Row from 'primevue/row';
+
+// ====================== INTERFACES ======================
+
+interface ColumnConfig {
+  name: string;
+  title: string;
+  visible?: boolean;
+  sortable?: boolean;
+  width?: string;
+  type?: 'computed';
+  fields?: string[];
+  value?: (data: any) => string;
+  attributes?: {
+    class?: string;
+  };
+}
+
+interface FilterConfig {
+  name: string;
+  type: 'string' | 'text' | 'varchar' | 'integer' | 'select' | 'multiselect' | 'date' | 'date_range' | 'year' | 'range';
+  title: string;
+  visible?: boolean;
+  options?: any[];
+  optionLabel?: string;
+  optionValue?: string;
+  placeholder?: string;
+  placeholderFrom?: string;
+  placeholderTo?: string;
+}
+
+interface LazyParams {
+  page: number;
+  rows: number;
+  sortField: string;
+  sortOrder: 'asc' | 'desc';
+}
+
+interface TableConfig {
+  requestUrl: string;
+  storageKey: string;
+  columns: ColumnConfig[];
+  filters?: FilterConfig[];
+  order?: Record<string, 'asc' | 'desc'>;
+  showDownload?: boolean;
+  filtersExpanded?: boolean;
+  rowsPerPageOptions?: number[];
+  scrollable?: boolean;
+}
+
+interface ApiResponse {
+  results?: {
+    list: any[];
+    count: number;
+  };
+}
+
+// ====================== PROPS ======================
+
+const props = defineProps<{
+  requestUrl?: string;
+  storageKey?: string;
+  columnsConfig: ColumnConfig[];
+  filtersConfig?: FilterConfig[];
+  defaultOrder?: Record<string, 'asc' | 'desc'>;
+  showDownload?: boolean;
+  filtersExpanded?: boolean;
+  rowsPerPageOptions?: number[];
+  scrollable?: boolean;
+}>();
+
+// ====================== CONSTANTS (SVG) ======================
 
 const columnsIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29 12.256h-1.88c-0.198-0.585-0.405-1.072-0.643-1.541l0.031 0.067 1.338-1.324c0.35-0.3 0.57-0.742 0.57-1.236 0-0.406-0.149-0.778-0.396-1.063l0.002 0.002-3.178-3.178c-0.283-0.246-0.654-0.395-1.061-0.395-0.494 0-0.937 0.221-1.234 0.57l-0.002 0.002-1.332 1.33c-0.402-0.206-0.888-0.413-1.39-0.586l-0.082-0.025 0.009-1.88c0.003-0.040 0.005-0.086 0.005-0.133 0-0.854-0.66-1.554-1.498-1.617l-0.005-0h-4.496c-0.844 0.063-1.505 0.763-1.505 1.617 0 0.047 0.002 0.093 0.006 0.139l-0 -0.006v1.879c-0.585 0.198-1.071 0.404-1.54 0.641l0.067-0.031-1.324-1.336c-0.299-0.352-0.742-0.573-1.236-0.573-0.407 0-0.778 0.15-1.063 0.397l0.002-0.002-3.179 3.179c-0.246 0.283-0.396 0.655-0.396 1.061 0 0.494 0.221 0.937 0.57 1.234l0.002 0.002 1.329 1.329c-0.207 0.403-0.414 0.891-0.587 1.395l-0.024 0.082-1.88-0.009c-0.040-0.003-0.086-0.005-0.133-0.005-0.854 0-1.554 0.661-1.617 1.499l-0 0.005v4.495c0.062 0.844 0.763 1.505 1.617 1.505 0.047 0 0.093-0.002 0.139-0.006l-0.006 0h1.88c0.198 0.585 0.404 1.072 0.642 1.541l-0.030-0.066-1.335 1.32c-0.351 0.3-0.572 0.744-0.572 1.239 0 0.407 0.149 0.779 0.396 1.064l-0.002-0.002 3.179 3.178c0.249 0.246 0.591 0.399 0.97 0.399 0.007 0 0.014-0 0.021-0h-0.001c0.515-0.013 0.977-0.231 1.308-0.576l0.001-0.001 1.33-1.33c0.403 0.207 0.891 0.414 1.395 0.587l0.082 0.025-0.009 1.878c-0.003 0.040-0.005 0.086-0.005 0.132 0 0.854 0.661 1.555 1.499 1.617l0.005 0h4.496c0.843-0.064 1.503-0.763 1.503-1.617 0-0.047-0.002-0.093-0.006-0.139l0 0.006v-1.881c0.585-0.198 1.073-0.405 1.543-0.643l-0.067 0.031 1.321 1.333c0.332 0.344 0.793 0.562 1.304 0.574l0.002 0h0.002c0.006 0 0.013 0 0.019 0 0.378 0 0.72-0.151 0.971-0.395l3.177-3.177c0.244-0.249 0.395-0.591 0.395-0.968 0-0.009-0-0.017-0-0.026l0 0.001c-0.012-0.513-0.229-0.973-0.572-1.304l-0.001-0.001-1.331-1.332c0.206-0.401 0.412-0.887 0.586-1.389l0.025-0.083 1.879 0.009c0.040 0.003 0.086 0.005 0.132 0.005 0.855 0 1.555-0.661 1.617-1.5l0-0.005v-4.495c-0.063-0.844-0.763-1.504-1.618-1.504-0.047 0-0.093 0.002-0.138 0.006l0.006-0zM29.004 18.25l-2.416-0.012c-0.020 0-0.037 0.010-0.056 0.011-0.198 0.024-0.372 0.115-0.501 0.249l-0 0c-0.055 0.072-0.103 0.153-0.141 0.24l-0.003 0.008c-0.005 0.014-0.016 0.024-0.020 0.039-0.24 0.844-0.553 1.579-0.944 2.264l0.026-0.049c-0.054 0.1-0.086 0.218-0.086 0.344 0 0.001 0 0.003 0 0.004v-0c-0 0.016 0.003 0.028 0.004 0.045 0.006 0.187 0.080 0.355 0.199 0.481l-0-0 0.009 0.023 1.707 1.709c0.109 0.109 0.137 0.215 0.176 0.176l-3.102 3.133c-0.099-0.013-0.186-0.061-0.248-0.13l-0-0-1.697-1.713c-0.008-0.009-0.022-0.005-0.030-0.013-0.121-0.112-0.28-0.183-0.456-0.193l-0.002-0c-0.020-0.003-0.044-0.005-0.068-0.006l-0.001-0c-0.125 0-0.243 0.032-0.345 0.088l0.004-0.002c-0.636 0.362-1.373 0.676-2.146 0.903l-0.074 0.019c-0.015 0.004-0.025 0.015-0.039 0.020-0.096 0.042-0.179 0.092-0.255 0.149l0.003-0.002c-0.035 0.034-0.066 0.071-0.093 0.11l-0.002 0.002c-0.027 0.033-0.053 0.070-0.075 0.11l-0.002 0.004c-0.033 0.081-0.059 0.175-0.073 0.274l-0.001 0.007c-0.001 0.016-0.010 0.031-0.010 0.047v2.412c0 0.15-0.055 0.248 0 0.25l-4.41 0.023c-0.052-0.067-0.084-0.153-0.084-0.246 0-0.008 0-0.016 0.001-0.024l-0 0.001 0.012-2.412c0-0.017-0.008-0.032-0.010-0.048-0.005-0.053-0.015-0.102-0.030-0.149l0.001 0.005c-0.012-0.053-0.028-0.1-0.048-0.145l0.002 0.005c-0.052-0.086-0.109-0.16-0.173-0.227l0 0c-0.029-0.024-0.062-0.046-0.096-0.066l-0.004-0.002c-0.044-0.030-0.093-0.056-0.146-0.076l-0.005-0.002c-0.014-0.005-0.024-0.016-0.039-0.020-0.847-0.241-1.585-0.554-2.272-0.944l0.051 0.026c-0.099-0.054-0.216-0.086-0.341-0.086h-0c-0.022-0.001-0.040 0.004-0.062 0.005-0.18 0.008-0.342 0.080-0.465 0.193l0.001-0c-0.008 0.008-0.021 0.004-0.029 0.012l-1.705 1.705c-0.107 0.107-0.216 0.139-0.178 0.178l-3.134-3.101c0.012-0.1 0.060-0.187 0.13-0.25l0-0 1.714-1.695 0.011-0.026c0.115-0.123 0.189-0.286 0.197-0.466l0-0.002c0.001-0.021 0.005-0.037 0.005-0.058 0-0.001 0-0.002 0-0.003 0-0.126-0.032-0.245-0.088-0.348l0.002 0.004c-0.365-0.636-0.679-1.371-0.903-2.145l-0.018-0.072c-0.004-0.015-0.016-0.026-0.021-0.041-0.042-0.094-0.090-0.176-0.146-0.25l0.002 0.003c-0.065-0.061-0.136-0.117-0.212-0.165l-0.006-0.003c-0.051-0.025-0.109-0.045-0.171-0.057l-0.005-0.001c-0.029-0.009-0.065-0.016-0.102-0.021l-0.004-0c-0.020-0.002-0.037-0.012-0.058-0.012h-2.412c-0.152 0.002-0.248-0.055-0.25-0.002l-0.022-4.409c0.067-0.052 0.151-0.084 0.244-0.084 0.009 0 0.017 0 0.026 0.001l-0.001-0 2.416 0.012c0.152-0.004 0.292-0.054 0.407-0.136l-0.002 0.002c0.024-0.014 0.044-0.028 0.064-0.043l-0.002 0.001c0.109-0.088 0.191-0.206 0.235-0.341l0.001-0.005c0.003-0.010 0.014-0.014 0.017-0.025 0.242-0.847 0.555-1.583 0.946-2.27l-0.026 0.050c0.054-0.1 0.086-0.218 0.086-0.344 0-0.001 0-0.001 0-0.002v0c0.001-0.019-0.003-0.033-0.004-0.052-0.007-0.184-0.080-0.35-0.197-0.475l0 0-0.010-0.024-1.705-1.705c-0.108-0.11-0.142-0.221-0.176-0.178l3.102-3.134c0.101 0.008 0.189 0.058 0.248 0.131l0.001 0.001 1.697 1.713c0.018 0.018 0.046 0.011 0.065 0.027 0.125 0.121 0.295 0.196 0.483 0.196 0.13 0 0.251-0.036 0.355-0.098l-0.003 0.002c0.636-0.364 1.372-0.677 2.145-0.902l0.072-0.018c0.014-0.004 0.024-0.015 0.038-0.019 0.057-0.021 0.105-0.047 0.151-0.077l-0.003 0.002c0.163-0.090 0.281-0.244 0.321-0.427l0.001-0.004c0.014-0.043 0.025-0.093 0.030-0.145l0-0.003c0.001-0.016 0.009-0.030 0.009-0.046v-2.412c0-0.151 0.056-0.249 0.001-0.25l4.41-0.023c0.052 0.067 0.083 0.152 0.083 0.245 0 0.009-0 0.017-0.001 0.026l0-0.001-0.012 2.412c-0 0.016 0.008 0.030 0.009 0.047 0.005 0.055 0.015 0.106 0.031 0.155l-0.001-0.005c0.071 0.234 0.243 0.419 0.464 0.506l0.005 0.002c0.014 0.005 0.025 0.016 0.039 0.020 0.845 0.242 1.58 0.555 2.265 0.945l-0.050-0.026c0.105 0.060 0.231 0.096 0.366 0.096 0 0 0.001 0 0.001 0h-0c0.183-0.008 0.347-0.082 0.471-0.198l-0 0c0.017-0.015 0.043-0.008 0.059-0.024l1.709-1.705c0.105-0.106 0.213-0.137 0.176-0.176l3.133 3.102c-0.012 0.1-0.059 0.186-0.129 0.249l-0 0-1.715 1.697-0.011 0.026c-0.116 0.123-0.19 0.287-0.198 0.468l-0 0.002c-0.001 0.020-0.005 0.036-0.005 0.056 0 0.001 0 0.002 0 0.003 0 0.126 0.032 0.245 0.088 0.348l-0.002-0.004c0.365 0.636 0.679 1.371 0.902 2.144l0.018 0.071c0.003 0.012 0.016 0.017 0.019 0.028 0.046 0.137 0.127 0.253 0.232 0.339l0.001 0.001c0.019 0.015 0.041 0.030 0.063 0.043l0.003 0.002c0.112 0.080 0.252 0.13 0.402 0.134l0.001 0h2.412c0.152-0.001 0.248 0.057 0.25 0.001l0.021 4.409c-0.065 0.053-0.149 0.085-0.24 0.085-0.010 0-0.019-0-0.029-0.001l0.001 0zM16 11.25c-2.623 0-4.75 2.127-4.75 4.75s2.127 4.75 4.75 4.75c2.623 0 4.75-2.127 4.75-4.75v0c-0.003-2.622-2.128-4.747-4.75-4.75h-0zM16 19.25c-1.795 0-3.25-1.455-3.25-3.25s1.455-3.25 3.25-3.25c1.795 0 3.25 1.455 3.25 3.25v0c-0.002 1.794-1.456 3.248-3.25 3.25h-0z"></path></svg>`;
 const filterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M30.646 1.62c-0.133-0.223-0.372-0.37-0.646-0.37h-22c-0.414 0-0.75 0.336-0.75 0.75 0 0.134 0.035 0.259 0.096 0.368l-0.002-0.004 7.763 13.973v4.52c0 0.292 0.167 0.545 0.411 0.668l0.004 0.002 6.284 3.143c0.096 0.050 0.211 0.080 0.332 0.080 0.002 0 0.003 0 0.005 0h-0c0.001 0 0.001 0 0.002 0 0.413 0 0.748-0.335 0.748-0.748 0-0.001 0-0.001 0-0.002v0-7.663l7.764-13.973c0.059-0.105 0.094-0.23 0.094-0.363 0-0.14-0.039-0.272-0.106-0.384l0.002 0.003zM21.486 15.778c-0.059 0.105-0.093 0.231-0.094 0.364v6.645l-4.785-2.393v-4.252c0-0 0-0.001 0-0.001 0-0.133-0.035-0.258-0.097-0.367l0.002 0.004-7.238-13.028h19.45zM14.214 23.25c-0.414 0-0.75 0.336-0.75 0.75v0 4.787l-3.928-1.965v-3.607c0-0 0-0 0-0.001 0-0.133-0.035-0.258-0.097-0.366l0.002 0.004-6.167-11.102h6.17c0.414 0 0.75-0.336 0.75-0.75s-0.336-0.75-0.75-0.75v0h-7.444c-0.414 0-0.75 0.336-0.75 0.75 0 0.134 0.035 0.259 0.096 0.368l-0.002-0.004 6.691 12.046v3.875c0 0.292 0.167 0.544 0.41 0.668l0.004 0.002 5.428 2.715c0.097 0.050 0.211 0.080 0.333 0.080 0.001 0 0.002 0 0.003 0h-0c0.001 0 0.001 0 0.002 0 0.413 0 0.748-0.335 0.748-0.748 0-0.001 0-0.001 0-0.002v0-6c-0-0.414-0.336-0.75-0.75-0.75v0z"></path></svg>`;
@@ -316,85 +385,79 @@ const downloadIcon = `<svg fill="currentColor" width="16px" height="16px" viewBo
 const cogIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29.18 13.92l-2.45-.41a8.91 8.91 0 00-.65-1.57l1.45-2.02a0.75 0.75 0 00-.08-.94l-2.12-2.12a0.75 0.75 0 00-.94-.08l-2.02 1.45a8.91 8.91 0 00-1.57-.65l-.41-2.45A0.75 0.75 0 0019.64 4h-3a0.75 0.75 0 00-.74.63l-.41 2.45a8.91 8.91 0 00-1.57.65L11.9 6.28a0.75 0.75 0 00-.94.08L8.84 8.48a0.75 0.75 0 00-.08.94l1.45 2.02a8.91 8.91 0 00-.65 1.57l-2.45.41A0.75 0.75 0 006.5 14.66v3a0.75 0.75 0 00.63.74l2.45 0.41c.15.55.37 1.08.65 1.57l-1.45 2.02a0.75 0.75 0 00.08.94l2.12 2.12a0.75 0.75 0 00.94.08l2.02-1.45c.49.28 1.02.5 1.57.65l.41 2.45a0.75 0.75 0 00.74.63h3a0.75 0.75 0 00.74-.63l.41-2.45c.55-.15 1.08-.37 1.57-.65l2.02 1.45a0.75 0.75 0 00.94-.08l2.12-2.12a0.75 0.75 0 00.08-.94l-1.45-2.02c.28-.49.5-1.02.65-1.57l2.45-.41a0.75 0.75 0 00.63-.74v-3a0.75 0.75 0 00-.63-.74zM17.84 21.5a5.5 5.5 0 115.5-5.5 5.5 5.5 0 01-5.5 5.5z"></path></svg>`;
 const resetFilterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M28.71 5.29A1 1 0 0 0 28 5H4a1 1 0 0 0-.71 1.71L12 15.42V26a1 1 0 0 0 .45.83l4 2.67A1 1 0 0 0 18 28.67V15.42l6-6V8h2a1 1 0 0 0 0-2h-3.33M27.71 19.29a1 1 0 0 0-1.42 0L24 21.59l-2.29-2.3a1 1 0 0 0-1.42 1.42l2.3 2.29-2.3 2.29a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l2.29-2.3 2.29 2.3a1 1 0 0 0 1.42 0 1 1 0 0 0 0-1.42L25.41 23l2.3-2.29a1 1 0 0 0 0-1.42z"/></svg>`;
 
-const externalConfig = ref(null);
 
-const props = defineProps({
-  requestUrl: { type: String, required: true },
-  storageKey: { type: String, required: true },
-  columnsConfig: { type: Array, required: true },
-  filtersConfig: { type: Array, default: () => [] },
-  defaultOrder: { type: Object, default: () => ({}) },
-  showDownload: { type: Boolean, default: false },
-  filtersExpanded: { type: Boolean, default: true },
-  rowsPerPageOptions: { type: Array, default: () => [10, 25, 50] },
-  scrollable: { type: Boolean, default: true }
-});
+// ====================== REACTIVE STATE ======================
+
+const externalConfig = ref<TableConfig | null>(null);
 
 const effectiveRequestUrl = computed(() => externalConfig.value?.requestUrl || props.requestUrl);
 const effectiveStorageKey = computed(() => externalConfig.value?.storageKey || props.storageKey);
 const effectiveColumns = computed(() => externalConfig.value?.columns || props.columnsConfig);
-const effectiveFilters = computed(() => externalConfig.value?.filters || props.filtersConfig);
-const effectiveOrder = computed(() => externalConfig.value?.order || props.defaultOrder);
-const effectiveShowDownload = computed(() => externalConfig.value?.showDownload ?? props.showDownload);
-const effectiveFiltersExpanded = computed(() => externalConfig.value?.filtersExpanded ?? props.filtersExpanded);
-const effectiveRowsPerPageOptions = computed(() => externalConfig.value?.rowsPerPageOptions || props.rowsPerPageOptions);
-const effectiveScrollable = computed(() => externalConfig.value?.scrollable ?? props.scrollable);
+const effectiveFilters = computed(() => externalConfig.value?.filters || props.filtersConfig || []);
+const effectiveOrder = computed(() => externalConfig.value?.order || props.defaultOrder || {});
+const effectiveShowDownload = computed(() => externalConfig.value?.showDownload ?? props.showDownload ?? false);
+const effectiveFiltersExpanded = computed(() => externalConfig.value?.filtersExpanded ?? props.filtersExpanded ?? true);
+const effectiveRowsPerPageOptions = computed(() => externalConfig.value?.rowsPerPageOptions || props.rowsPerPageOptions || [10, 25, 50]);
+const effectiveScrollable = computed(() => externalConfig.value?.scrollable ?? props.scrollable ?? true);
 
 const dtFirstOffset = computed(() => (lazyParams.value.page - 1) * lazyParams.value.rows);
 const STORAGE_KEY = computed(() => `udt_state_${effectiveStorageKey.value}`);
 
-const items = ref([]);
-const totalRecords = ref(0);
-const loading = ref(true);
-const downloadLoading = ref(false);
+const items = ref<any[]>([]);
+const totalRecords = ref<number>(0);
+const loading = ref<boolean>(true);
+const downloadLoading = ref<boolean>(false);
 
-const columnsPopover = ref(null);
-const filtersPopover = ref(null);
+const columnsPopover = ref<InstanceType<typeof Popover> | null>(null);
+const filtersPopover = ref<InstanceType<typeof Popover> | null>(null);
 
-const isFiltersPanelOpen = ref(true);
-const columnsState = ref([]);
-const filtersState = ref([]);
-const activeFilters = reactive({});
-const lazyParams = ref({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
+const isFiltersPanelOpen = ref<boolean>(true);
+const columnsState = ref<ColumnConfig[]>([]);
+const filtersState = ref<FilterConfig[]>([]);
+const activeFilters = reactive<Record<string, any>>({});
+const lazyParams = ref<LazyParams>({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
 
-const isScrollEnabled = ref(true);
-const topScrollContainer = ref(null);
-const bottomScrollContainer = ref(null);
-const dtWrapper = ref(null);
-const tableInnerWidth = ref(0);
-let tableScrollElement = null;
-let resizeObserver = null;
+const isScrollEnabled = ref<boolean>(true);
+const topScrollContainer = ref<HTMLElement | null>(null);
+const bottomScrollContainer = ref<HTMLElement | null>(null);
+const dtWrapper = ref<HTMLElement | null>(null);
+const tableInnerWidth = ref<number>(0);
+
+let tableScrollElement: HTMLElement | null = null;
+let resizeObserver: ResizeObserver | null = null;
 let isInitializing = false;
-let filterTimeout = null;
+let filterTimeout: ReturnType<typeof setTimeout> | null = null;
 
-// ─── ХЕНДЛЕРИ ДЛЯ INTEGER ───────────────────────────────────────────────────
-const onIntegerFilterInput = (event, filterName) => {
-  const parsedValue = (event.value !== undefined && event.value !== null && event.value !== '')
-      ? Number(event.value)
-      : null;
-  activeFilters[filterName] = parsedValue;
-  clearTimeout(filterTimeout);
-  filterTimeout = setTimeout(() => { triggerFilterApply(); }, 500);
+let isSyncingTop = false;
+let isSyncingBottom = false;
+let isSyncingTable = false;
+
+// ====================== FILTER HANDLERS ======================
+
+const onIntegerFilterInput = (event: any, filterName: string) => {
+  activeFilters[filterName] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
+  debounceFilter();
 };
 
-// ─── ВИПРАВЛЕНІ ХЕНДЛЕРИ ДЛЯ RANGE ──────────────────────────────────────────
-const onRangeFilterInput = (event, filterName, field) => {
-  const parsedValue = (event.value !== undefined && event.value !== null && event.value !== '')
-      ? Number(event.value)
-      : null;
-  activeFilters[filterName][field] = parsedValue;
-  clearTimeout(filterTimeout);
-  filterTimeout = setTimeout(() => { triggerFilterApply(); }, 500);
+const onRangeFilterInput = (event: any, filterName: string, field: 'from' | 'to') => {
+  if (!activeFilters[filterName]) activeFilters[filterName] = { from: null, to: null };
+  activeFilters[filterName][field] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
+  debounceFilter();
 };
 
-const onRangeFilterClear = (filterName, field) => {
-  activeFilters[filterName][field] = null;
-  clearTimeout(filterTimeout);
+const onRangeFilterClear = (filterName: string, field: 'from' | 'to') => {
+  if (activeFilters[filterName]) activeFilters[filterName][field] = null;
   triggerFilterApply();
 };
 
-// ─── LOCAL STORAGE ───────────────────────────────────────────────────────────
-const loadStateFromStorage = () => {
+const debounceFilter = () => {
+  if (filterTimeout) clearTimeout(filterTimeout);
+  filterTimeout = setTimeout(() => triggerFilterApply(), 500);
+};
+
+// ====================== LOCAL STORAGE ======================
+
+const loadStateFromStorage = (): any => {
   if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return null;
   try {
     const saved = localStorage.getItem(STORAGE_KEY.value);
@@ -405,7 +468,7 @@ const loadStateFromStorage = () => {
   }
 };
 
-const formatDateToLocalString = (date) => {
+const formatDateToLocalString = (date: Date | null): string => {
   if (!date || isNaN(date.getTime())) return '';
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -415,53 +478,37 @@ const formatDateToLocalString = (date) => {
 
 const initState = () => {
   isInitializing = true;
-
   const savedState = loadStateFromStorage();
-  const defaultRows = effectiveRowsPerPageOptions.value?.[0] || 10;
+  const defaultRows = effectiveRowsPerPageOptions.value[0] || 10;
 
-  isFiltersPanelOpen.value = (savedState && savedState.isFiltersPanelOpen !== undefined)
-      ? savedState.isFiltersPanelOpen
-      : effectiveFiltersExpanded.value;
+  isFiltersPanelOpen.value = savedState?.isFiltersPanelOpen ?? effectiveFiltersExpanded.value;
 
-  if (externalConfig.value && externalConfig.value.scrollable !== undefined) {
-    isScrollEnabled.value = externalConfig.value.scrollable;
-  } else if (savedState && savedState.isScrollEnabled !== undefined) {
-    isScrollEnabled.value = savedState.isScrollEnabled;
-  } else {
-    isScrollEnabled.value = effectiveScrollable.value;
-  }
+  isScrollEnabled.value = externalConfig.value?.scrollable ?? savedState?.isScrollEnabled ?? effectiveScrollable.value;
 
-  columnsState.value = effectiveColumns.value.map(col => {
-    if (col.type === 'computed') {
-      return { ...col, visible: true };
-    } else {
-      const savedCol = savedState?.columns?.find(c => c.name === col.name);
-      return {
-        ...col,
-        visible: savedCol ? savedCol.visible : (col.visible !== false)
-      };
-    }
+  // Columns
+  columnsState.value = effectiveColumns.value.map((col: ColumnConfig) => {
+    if (col.type === 'computed') return { ...col, visible: true };
+    const savedCol = savedState?.columns?.find((c: any) => c.name === col.name);
+    return { ...col, visible: savedCol?.visible ?? (col.visible !== false) };
   });
 
-  filtersState.value = effectiveFilters.value.map(f => {
-    const savedFilter = savedState?.filtersVisibility?.find(sf => sf.name === f.name);
-    return { ...f, visible: savedFilter ? savedFilter.visible : (f.visible !== false) };
+  // Filters
+  filtersState.value = effectiveFilters.value.map((f: FilterConfig) => {
+    const savedFilter = savedState?.filtersVisibility?.find((sf: any) => sf.name === f.name);
+    return { ...f, visible: savedFilter?.visible ?? (f.visible !== false) };
   });
 
+  // Active Filters
   Object.keys(activeFilters).forEach(key => delete activeFilters[key]);
 
-  effectiveFilters.value.forEach(f => {
+  effectiveFilters.value.forEach((f: FilterConfig) => {
     const savedValue = savedState?.activeFilters?.[f.name];
-
     if ((f.type === 'date' || f.type === 'year') && savedValue) {
       activeFilters[f.name] = new Date(savedValue);
     } else if (f.type === 'date_range' && Array.isArray(savedValue)) {
-      activeFilters[f.name] = savedValue.map(d => d ? new Date(d) : null);
+      activeFilters[f.name] = savedValue.map((d: string | null) => d ? new Date(d) : null);
     } else if (f.type === 'range') {
-      activeFilters[f.name] = {
-        from: savedValue?.from ?? null,
-        to: savedValue?.to ?? null
-      };
+      activeFilters[f.name] = { from: savedValue?.from ?? null, to: savedValue?.to ?? null };
     } else if (f.type === 'multiselect') {
       activeFilters[f.name] = Array.isArray(savedValue) ? savedValue : [];
     } else {
@@ -482,27 +529,17 @@ const initState = () => {
   });
 };
 
-watch(() => effectiveStorageKey.value, (newKey) => {
-  if (newKey && newKey !== 'undefined') {
-    initState();
-    loadData();
-  }
-}, { immediate: true });
-
-const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible));
-const showDownloadBtn = computed(() => effectiveShowDownload.value);
-
 const saveStateToStorage = () => {
   if (isInitializing || !effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
 
-  const cleanedActiveFilters = {};
+  const cleanedActiveFilters: Record<string, any> = {};
   Object.keys(activeFilters).forEach(key => {
     const val = activeFilters[key];
     if (val instanceof Date) {
       cleanedActiveFilters[key] = val.toISOString();
     } else if (Array.isArray(val)) {
       cleanedActiveFilters[key] = val.map(d => d instanceof Date ? d.toISOString() : d);
-    } else if (val !== null && typeof val === 'object' && 'from' in val && 'to' in val) {
+    } else if (val && typeof val === 'object' && 'from' in val && 'to' in val) {
       cleanedActiveFilters[key] = { from: val.from, to: val.to };
     } else {
       cleanedActiveFilters[key] = val;
@@ -512,61 +549,42 @@ const saveStateToStorage = () => {
   const stateToSave = {
     isFiltersPanelOpen: isFiltersPanelOpen.value,
     isScrollEnabled: isScrollEnabled.value,
-    lazyParams: {
-      page: lazyParams.value.page,
-      rows: lazyParams.value.rows,
-      sortField: lazyParams.value.sortField,
-      sortOrder: lazyParams.value.sortOrder
-    },
+    lazyParams: { ...lazyParams.value },
     columns: columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
     filtersVisibility: filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
     activeFilters: cleanedActiveFilters
   };
+
   localStorage.setItem(STORAGE_KEY.value, JSON.stringify(stateToSave));
 };
 
-watch(activeFilters, () => { saveStateToStorage(); }, { deep: true });
+// ====================== FILTERS & DATA ======================
 
-const toggleFiltersPanel = () => {
-  isFiltersPanelOpen.value = !isFiltersPanelOpen.value;
-  saveStateToStorage();
-};
-
-// ─── ФОРМУВАННЯ ФІЛЬТРІВ ДЛЯ БЕКЕНДУ ────────────────────────────────────────
 const getCleanedFilters = () => {
-  const cleaned = {};
+  const cleaned: Record<string, any> = {};
 
   filtersState.value.forEach(f => {
-    const val = activeFilters[f.name];
-
     if (!f.visible) return;
+    const val = activeFilters[f.name];
 
     if (f.type === 'date' && val instanceof Date) {
       if (!isNaN(val.getTime())) {
         const offset = val.getTimezoneOffset();
-        const correctedDate = new Date(val.getTime() - (offset * 60 * 1000));
-        cleaned[f.name] = correctedDate.toISOString().split('T')[0];
+        const corrected = new Date(val.getTime() - offset * 60 * 1000);
+        cleaned[f.name] = corrected.toISOString().split('T')[0];
       }
     } else if (f.type === 'year' && val instanceof Date) {
-      if (!isNaN(val.getTime())) {
-        cleaned[f.name] = val.getFullYear();
-      }
+      cleaned[f.name] = val.getFullYear();
     } else if (f.type === 'date_range' && Array.isArray(val)) {
-      const [startDate, endDate] = val;
-      if (startDate && endDate) {
-        cleaned[f.name] = `${formatDateToLocalString(startDate)}-${formatDateToLocalString(endDate)}`;
+      const [start, end] = val;
+      if (start && end) {
+        cleaned[f.name] = `${formatDateToLocalString(start)}-${formatDateToLocalString(end)}`;
       }
     } else if (f.type === 'multiselect' && Array.isArray(val) && val.length > 0) {
       cleaned[f.name] = val;
     } else if (f.type === 'range') {
-      const from = val?.from;
-      const to = val?.to;
-      if (from !== null && from !== undefined) {
-        cleaned[`${f.name}_from`] = from;
-      }
-      if (to !== null && to !== undefined) {
-        cleaned[`${f.name}_to`] = to;
-      }
+      if (val?.from !== null && val?.from !== undefined) cleaned[`${f.name}_from`] = val.from;
+      if (val?.to !== null && val?.to !== undefined) cleaned[`${f.name}_to`] = val.to;
     } else if (f.type !== 'range' && val !== '' && val !== null && val !== undefined) {
       cleaned[f.name] = val;
     }
@@ -575,17 +593,18 @@ const getCleanedFilters = () => {
   return cleaned;
 };
 
-// ─── ЗАВАНТАЖЕННЯ ДАНИХ ──────────────────────────────────────────────────────
 const loadData = async () => {
   if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
   loading.value = true;
+
   const payload = {
     pager: { page: lazyParams.value.page, size: lazyParams.value.rows },
     order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
     filters: getCleanedFilters()
   };
+
   try {
-    const response = await fetch(effectiveRequestUrl.value, {
+    const response = await fetch(effectiveRequestUrl.value!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -593,11 +612,11 @@ const loadData = async () => {
       },
       body: JSON.stringify(payload)
     });
-    const data = await response.json();
+    const data: ApiResponse = await response.json();
     if (data.results) {
-      items.value = data.results.list;
-      totalRecords.value = data.results.count;
-      nextTick(() => { updateScrollDimensions(); });
+      items.value = data.results.list || [];
+      totalRecords.value = data.results.count || 0;
+      nextTick(() => updateScrollDimensions());
     }
   } catch (error) {
     console.error('Помилка завантаження даних:', error);
@@ -612,13 +631,11 @@ const exportData = async () => {
     filters: getCleanedFilters(),
     order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
   };
+
   try {
     const response = await fetch(effectiveRequestUrl.value + '-export', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '' },
       body: JSON.stringify(payload)
     });
     const blob = await response.blob();
@@ -626,9 +643,8 @@ const exportData = async () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = `report_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    document.body.appendChild(a);
     a.click();
-    a.remove();
+    window.URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Помилка експорту:', error);
   } finally {
@@ -636,84 +652,65 @@ const exportData = async () => {
   }
 };
 
-const toggleColumnsPopover = (event) => { columnsPopover.value.toggle(event); };
-const toggleFiltersPopover = (event) => { filtersPopover.value.toggle(event); };
-
-// ─── СКРОЛ СИНХРОНІЗАЦІЯ ─────────────────────────────────────────────────────
-
-// Прапорці для запобігання циклічного спрацювання між трьома скролами
-let isSyncingTop = false;
-let isSyncingBottom = false;
-let isSyncingTable = false;
+// ====================== SCROLL SYNC ======================
 
 const updateScrollDimensions = () => {
   if (!isScrollEnabled.value || !dtWrapper.value) return;
-  const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container')
-      || dtWrapper.value.querySelector('.p-datatable-scrollbar');
-  const tableEl = dtWrapper.value.querySelector('.p-datatable-table');
+
+  const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') as HTMLElement;
+  const tableEl = dtWrapper.value.querySelector('.p-datatable-table') as HTMLElement;
+
   if (innerTableContainer && tableEl) {
     tableScrollElement = innerTableContainer;
     tableInnerWidth.value = tableEl.offsetWidth;
 
-    // Знімаємо старий слухач і вішаємо новий (єдина функція для обох кастомних скролів)
     tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
     tableScrollElement.addEventListener('scroll', syncTableToScrollbars);
 
     nextTick(() => {
-      if (topScrollContainer.value) {
-        topScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
-      }
-      if (bottomScrollContainer.value) {
-        bottomScrollContainer.value.scrollLeft = tableScrollElement.scrollLeft;
-      }
+      const scrollLeft = tableScrollElement!.scrollLeft;
+      if (topScrollContainer.value) topScrollContainer.value.scrollLeft = scrollLeft;
+      if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = scrollLeft;
     });
   }
 };
 
-// Верхній кастомний скрол -> таблиця + нижній кастомний скрол
 const syncTopToTable = () => {
   if (!tableScrollElement || isSyncingTable || isSyncingBottom) return;
   isSyncingTop = true;
-  const pos = topScrollContainer.value.scrollLeft;
+  const pos = topScrollContainer.value!.scrollLeft;
   tableScrollElement.scrollLeft = pos;
-  if (bottomScrollContainer.value) {
-    bottomScrollContainer.value.scrollLeft = pos;
-  }
+  if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = pos;
   setTimeout(() => { isSyncingTop = false; }, 20);
 };
 
-// Нижній кастомний скрол -> таблиця + верхній кастомний скрол
 const syncBottomToTable = () => {
   if (!tableScrollElement || isSyncingTable || isSyncingTop) return;
   isSyncingBottom = true;
-  const pos = bottomScrollContainer.value.scrollLeft;
+  const pos = bottomScrollContainer.value!.scrollLeft;
   tableScrollElement.scrollLeft = pos;
-  if (topScrollContainer.value) {
-    topScrollContainer.value.scrollLeft = pos;
-  }
+  if (topScrollContainer.value) topScrollContainer.value.scrollLeft = pos;
   setTimeout(() => { isSyncingBottom = false; }, 20);
 };
 
-// Нативний скрол таблиці -> обидва кастомних скроли
 const syncTableToScrollbars = () => {
   if (isSyncingTop || isSyncingBottom) return;
   isSyncingTable = true;
-  const pos = tableScrollElement.scrollLeft;
-  if (topScrollContainer.value) {
-    topScrollContainer.value.scrollLeft = pos;
-  }
-  if (bottomScrollContainer.value) {
-    bottomScrollContainer.value.scrollLeft = pos;
-  }
+  const pos = tableScrollElement!.scrollLeft;
+  if (topScrollContainer.value) topScrollContainer.value.scrollLeft = pos;
+  if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = pos;
   setTimeout(() => { isSyncingTable = false; }, 20);
 };
 
 const setupScrollSync = () => {
-  if (!isScrollEnabled.value) { destroyScrollSync(); return; }
+  if (!isScrollEnabled.value) {
+    destroyScrollSync();
+    return;
+  }
   nextTick(() => {
     updateScrollDimensions();
     if (dtWrapper.value && !resizeObserver) {
-      resizeObserver = new ResizeObserver(() => { updateScrollDimensions(); });
+      resizeObserver = new ResizeObserver(() => updateScrollDimensions());
       resizeObserver.observe(dtWrapper.value);
     }
   });
@@ -736,69 +733,45 @@ const handleScrollToggle = () => {
 
 const onColumnVisibilityChange = () => {
   saveStateToStorage();
-  setTimeout(() => { updateScrollDimensions(); }, 50);
+  setTimeout(() => updateScrollDimensions(), 50);
 };
 
-onMounted(() => {
-  document.addEventListener('datatable:setConfig', (e) => {
-    externalConfig.value = e.detail;
-    initState();
-    loadData();
-  });
-  if (window.datatableConfig) {
-    externalConfig.value = window.datatableConfig;
-    initState();
-    loadData();
-  }
-});
+// ====================== OTHER HANDLERS ======================
 
-onBeforeUnmount(() => { destroyScrollSync(); });
+const toggleFiltersPanel = () => {
+  isFiltersPanelOpen.value = !isFiltersPanelOpen.value;
+  saveStateToStorage();
+};
 
-// ─── ПАГІНАЦІЯ / СОРТУВАННЯ ──────────────────────────────────────────────────
-const onPage = (event) => {
+const toggleColumnsPopover = (event: Event) => columnsPopover.value?.toggle(event);
+const toggleFiltersPopover = (event: Event) => filtersPopover.value?.toggle(event);
+
+const onPage = (event: any) => {
   lazyParams.value.page = event.page + 1;
   lazyParams.value.rows = event.rows;
   saveStateToStorage();
   loadData();
 };
 
-const onSort = (event) => {
+const onSort = (event: any) => {
   lazyParams.value.sortField = event.sortField || 'id';
   lazyParams.value.sortOrder = event.sortOrder === 1 ? 'asc' : 'desc';
   saveStateToStorage();
   loadData();
 };
 
-// ─── ЗАГАЛЬНІ ФІЛЬТР-ХЕНДЛЕРИ ────────────────────────────────────────────────
-const triggerFilterApply = () => {
-  lazyParams.value.page = 1;
-  saveStateToStorage();
-  loadData();
-};
-
-const onFilterInput = () => {
-  clearTimeout(filterTimeout);
-  filterTimeout = setTimeout(() => { triggerFilterApply(); }, 500);
-};
-
-const onFilterClear = () => {
-  clearTimeout(filterTimeout);
-  triggerFilterApply();
-};
-
-const onFilterDateUpdate = () => {
-  clearTimeout(filterTimeout);
-  triggerFilterApply();
-};
+const onFilterInput = () => debounceFilter();
+const onFilterClear = () => triggerFilterApply();
+const onFilterDateUpdate = () => triggerFilterApply();
 
 const clearAllFilters = () => {
-  clearTimeout(filterTimeout);
+  if (filterTimeout) clearTimeout(filterTimeout);
   effectiveFilters.value.forEach(f => {
     if (f.type === 'range') {
       activeFilters[f.name] = { from: null, to: null };
     } else if (f.type === 'multiselect') {
       activeFilters[f.name] = [];
-    } else if (f.type === 'date' || f.type === 'date_range' || f.type === 'year') {
+    } else if (['date', 'date_range', 'year'].includes(f.type)) {
       activeFilters[f.name] = null;
     } else {
       activeFilters[f.name] = '';
@@ -806,6 +779,44 @@ const clearAllFilters = () => {
   });
   triggerFilterApply();
 };
+
+const triggerFilterApply = () => {
+  lazyParams.value.page = 1;
+  saveStateToStorage();
+  loadData();
+};
+
+// ====================== LIFECYCLE ======================
+
+watch(() => effectiveStorageKey.value, (newKey) => {
+  if (newKey && newKey !== 'undefined') {
+    initState();
+    loadData();
+  }
+}, { immediate: true });
+
+watch(activeFilters, () => { saveStateToStorage(); }, { deep: true });
+
+const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible));
+const showDownloadBtn = computed(() => effectiveShowDownload.value);
+
+onMounted(() => {
+  document.addEventListener('datatable:setConfig', (e: any) => {
+    externalConfig.value = e.detail;
+    initState();
+    loadData();
+  });
+
+  if (window.datatableConfig) {
+    externalConfig.value = window.datatableConfig;
+    initState();
+    loadData();
+  }
+});
+
+onBeforeUnmount(() => {
+  destroyScrollSync();
+});
 </script>
 
 <style scoped>
@@ -897,3 +908,4 @@ const clearAllFilters = () => {
 :deep(.p-datatable-table-container)::-webkit-scrollbar {  display: none;}
 :deep(.p-datatable-table-container) {  -ms-overflow-style: none;  /* IE / Edge */  scrollbar-width: none;     /* Firefox */}
 </style>
+

@@ -2,7 +2,9 @@
   <div class="universal-dt-container">
 
     <Toolbar class="mb-4 bg-light-gray">
-      <template #start></template>
+      <template #start>
+        <div v-if="effectiveToolbarStart" v-html="effectiveToolbarStart"></div>
+      </template>
       <template #end>
         <div class="flex gap-2 align-items-center">
 
@@ -290,7 +292,6 @@
 
     <!-- Нижній кастомний скрол -->
     <div
-        v-if="isScrollEnabled"
         ref="bottomScrollContainer"
         class="bottom-scrollbar-container"
         @scroll="syncBottomToTable"
@@ -366,6 +367,7 @@ interface TableConfig {
   filtersExpanded?: boolean;
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
+  toolbarStart?: string;
 }
 
 interface ApiResponse {
@@ -387,6 +389,7 @@ const props = defineProps<{
   filtersExpanded?: boolean;
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
+  toolbarStart?: string;
 }>();
 
 // ====================== CONSTANTS (SVG) ======================
@@ -397,6 +400,8 @@ const downloadIcon = `<svg fill="currentColor" width="16px" height="16px" viewBo
 const cogIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29.18 13.92l-2.45-.41a8.91 8.91 0 00-.65-1.57l1.45-2.02a0.75 0.75 0 00-.08-.94l-2.12-2.12a0.75 0.75 0 00-.94-.08l-2.02 1.45a8.91 8.91 0 00-1.57-.65l-.41-2.45A0.75 0.75 0 0019.64 4h-3a0.75 0.75 0 00-.74.63l-.41 2.45a8.91 8.91 0 00-1.57.65L11.9 6.28a0.75 0.75 0 00-.94.08L8.84 8.48a0.75 0.75 0 00-.08.94l1.45 2.02a8.91 8.91 0 00-.65 1.57l-2.45.41A0.75 0.75 0 006.5 14.66v3a0.75 0.75 0 00.63.74l2.45 0.41c.15.55.37 1.08.65 1.57l-1.45 2.02a0.75 0.75 0 00.08.94l2.12 2.12a0.75 0.75 0 00.94.08l2.02-1.45c.49.28 1.02.5 1.57.65l.41 2.45a0.75 0.75 0 00.74.63h3a0.75 0.75 0 00.74-.63l.41-2.45c.55-.15 1.08-.37 1.57-.65l2.02 1.45a0.75 0.75 0 00.94-.08l2.12-2.12a0.75 0.75 0 00.08-.94l-1.45-2.02c.28-.49.5-1.02.65-1.57l2.45-.41a0.75 0.75 0 00.63-.74v-3a0.75 0.75 0 00-.63-.74zM17.84 21.5a5.5 5.5 0 115.5-5.5 5.5 5.5 0 01-5.5 5.5z"></path></svg>`;
 const resetFilterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M28.71 5.29A1 1 0 0 0 28 5H4a1 1 0 0 0-.71 1.71L12 15.42V26a1 1 0 0 0 .45.83l4 2.67A1 1 0 0 0 18 28.67V15.42l6-6V8h2a1 1 0 0 0 0-2h-3.33M27.71 19.29a1 1 0 0 0-1.42 0L24 21.59l-2.29-2.3a1 1 0 0 0-1.42 1.42l2.3 2.29-2.3 2.29a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l2.29-2.3 2.29 2.3a1 1 0 0 0 1.42 0 1 1 0 0 0 0-1.42L25.41 23l2.3-2.29a1 1 0 0 0 0-1.42z"/></svg>`;
 
+
+const effectiveToolbarStart = computed(() => externalConfig.value?.toolbarStart || props.toolbarStart || '');
 
 // ====================== REACTIVE STATE ======================
 

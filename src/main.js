@@ -60,11 +60,16 @@ document.addEventListener('datatable:setConfig', (event) => {
 
     const app = createApp(UniversalDataTable, {
         requestUrl: config.requestUrl,
+        storageKey: config.storageKey,
         columnsConfig: config.columns,
         filtersConfig: config.filters || [],
         defaultOrder: config.order || {},
-        showDownload: config.showDownload || false,
-        // інші пропси, якщо потрібно
+        showDownload: config.showDownload ?? false,
+        filtersExpanded: config.filtersExpanded ?? true,
+        rowsPerPageOptions: config.rowsPerPageOptions || [10, 25, 50, 100],
+        scrollable: config.scrollable ?? true,
+        toolbarStart: config.toolbarStart || '',
+        downloadFilename: config.downloadFilename || 'export',
     });
 
     app.use(PrimeVue, {

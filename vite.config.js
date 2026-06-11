@@ -11,7 +11,7 @@ export default defineConfig({
   },
   build: {
     cssCodeSplit: false,
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
         entryFileNames: 'js/party-datatable.js',

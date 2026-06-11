@@ -304,6 +304,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, reactive, computed, watch, nextTick } from 'vue';
+import * as XLSX from 'xlsx';
+
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import InputText from 'primevue/inputtext';
@@ -320,18 +322,16 @@ import MultiSelect from 'primevue/multiselect';
 
 interface ColumnConfig {
   name: string;
-  title: string;
   visible?: boolean;
   sortable?: boolean;
   width?: string;
   type?: 'computed';
   fields?: string[];
   value?: (data: any) => string;
-  // === Кастомні класи ===
-  class?: string;           // клас для тіла (td)
-  headerClass?: string;     // клас для заголовка (th)
-  bodyClass?: string;       // alias для class (більш зрозуміло)
-  footerClass?: string;     // якщо будеш використовувати футер
+  class?: string;
+  headerClass?: string;
+  bodyClass?: string;
+  footerClass?: string;
   attributes?: {
     class?: string;
   };
@@ -339,9 +339,7 @@ interface ColumnConfig {
 
 interface FilterConfig {
   name: string;
-  type: 'string' | 'text' | 'varchar' | 'integer' | 'select' | 'multiselect' | 'date' | 'date_range' | 'year' | 'range';
-  title: string;
-  visible?: boolean;
+  type: 'string' | 'text' | 'varchar' | 'integer' | 'select' | 'multiselect' | 'date' | 'date_range' | 'year' | 'range';  visible?: boolean;
   options?: any[];
   optionLabel?: string;
   optionValue?: string;
@@ -357,6 +355,21 @@ interface LazyParams {
   sortOrder: 'asc' | 'desc';
 }
 
+interface ClientExportColumn {
+  key: string;
+  header: string;
+  width?: number;
+}
+
+interface ClientExportResponse {
+  columns: ClientExportColumn[];
+  rows: Record<string, any>[];
+  filename?: string;
+}
+
+// Підтримувані формати файлу при завантаженні
+type DownloadFormat = 'xlsx' | 'csv';
+
 interface TableConfig {
   requestUrl: string;
   storageKey: string;
@@ -368,6 +381,8 @@ interface TableConfig {
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
   toolbarStart?: string;
+  downloadFilename?: string;
+  downloadFormat?: DownloadFormat;
 }
 
 interface ApiResponse {
@@ -390,6 +405,8 @@ const props = defineProps<{
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
   toolbarStart?: string;
+  downloadFilename?: string;
+  downloadFormat?: DownloadFormat;
 }>();
 
 // ====================== CONSTANTS (SVG) ======================
@@ -400,54 +417,60 @@ const downloadIcon = `<svg fill="currentColor" width="16px" height="16px" viewBo
 const cogIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29.18 13.92l-2.45-.41a8.91 8.91 0 00-.65-1.57l1.45-2.02a0.75 0.75 0 00-.08-.94l-2.12-2.12a0.75 0.75 0 00-.94-.08l-2.02 1.45a8.91 8.91 0 00-1.57-.65l-.41-2.45A0.75 0.75 0 0019.64 4h-3a0.75 0.75 0 00-.74.63l-.41 2.45a8.91 8.91 0 00-1.57.65L11.9 6.28a0.75 0.75 0 00-.94.08L8.84 8.48a0.75 0.75 0 00-.08.94l1.45 2.02a8.91 8.91 0 00-.65 1.57l-2.45.41A0.75 0.75 0 006.5 14.66v3a0.75 0.75 0 00.63.74l2.45 0.41c.15.55.37 1.08.65 1.57l-1.45 2.02a0.75 0.75 0 00.08.94l2.12 2.12a0.75 0.75 0 00.94.08l2.02-1.45c.49.28 1.02.5 1.57.65l.41 2.45a0.75 0.75 0 00.74.63h3a0.75 0.75 0 00.74-.63l.41-2.45c.55-.15 1.08-.37 1.57-.65l2.02 1.45a0.75 0.75 0 00.94-.08l2.12-2.12a0.75 0.75 0 00.08-.94l-1.45-2.02c.28-.49.5-1.02.65-1.57l2.45-.41a0.75 0.75 0 00.63-.74v-3a0.75 0.75 0 00-.63-.74zM17.84 21.5a5.5 5.5 0 115.5-5.5 5.5 5.5 0 01-5.5 5.5z"></path></svg>`;
 const resetFilterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M28.71 5.29A1 1 0 0 0 28 5H4a1 1 0 0 0-.71 1.71L12 15.42V26a1 1 0 0 0 .45.83l4 2.67A1 1 0 0 0 18 28.67V15.42l6-6V8h2a1 1 0 0 0 0-2h-3.33M27.71 19.29a1 1 0 0 0-1.42 0L24 21.59l-2.29-2.3a1 1 0 0 0-1.42 1.42l2.3 2.29-2.3 2.29a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l2.29-2.3 2.29 2.3a1 1 0 0 0 1.42 0 1 1 0 0 0 0-1.42L25.41 23l2.3-2.29a1 1 0 0 0 0-1.42z"/></svg>`;
 
-
-const effectiveToolbarStart = computed(() => externalConfig.value?.toolbarStart || props.toolbarStart || '');
-
-// ====================== REACTIVE STATE ======================
+// ====================== COMPUTED ======================
 
 const externalConfig = ref<TableConfig | null>(null);
 
-const effectiveRequestUrl = computed(() => externalConfig.value?.requestUrl || props.requestUrl);
-const effectiveStorageKey = computed(() => externalConfig.value?.storageKey || props.storageKey);
-const effectiveColumns = computed(() => externalConfig.value?.columns || props.columnsConfig);
-const effectiveFilters = computed(() => externalConfig.value?.filters || props.filtersConfig || []);
-const effectiveOrder = computed(() => externalConfig.value?.order || props.defaultOrder || {});
-const effectiveShowDownload = computed(() => externalConfig.value?.showDownload ?? props.showDownload ?? false);
+const effectiveRequestUrl    = computed(() => externalConfig.value?.requestUrl    || props.requestUrl);
+const effectiveStorageKey    = computed(() => externalConfig.value?.storageKey    || props.storageKey);
+const effectiveColumns       = computed(() => externalConfig.value?.columns       || props.columnsConfig);
+const effectiveFilters       = computed(() => externalConfig.value?.filters       || props.filtersConfig  || []);
+const effectiveOrder         = computed(() => externalConfig.value?.order         || props.defaultOrder   || {});
+const effectiveShowDownload  = computed(() => externalConfig.value?.showDownload  ?? props.showDownload   ?? false);
 const effectiveFiltersExpanded = computed(() => externalConfig.value?.filtersExpanded ?? props.filtersExpanded ?? true);
 const effectiveRowsPerPageOptions = computed(() => externalConfig.value?.rowsPerPageOptions || props.rowsPerPageOptions || [10, 25, 50]);
-const effectiveScrollable = computed(() => externalConfig.value?.scrollable ?? props.scrollable ?? true);
+const effectiveScrollable    = computed(() => externalConfig.value?.scrollable    ?? props.scrollable     ?? true);
+const effectiveToolbarStart  = computed(() => externalConfig.value?.toolbarStart  || props.toolbarStart   || '');
+const effectiveDownloadFilename = computed(() => externalConfig.value?.downloadFilename || props.downloadFilename || 'report');
+
+// Формат файлу: 'xlsx' за замовчуванням, якщо не задано
+const effectiveDownloadFormat = computed<DownloadFormat>(() =>
+    externalConfig.value?.downloadFormat || props.downloadFormat || 'xlsx'
+);
 
 const dtFirstOffset = computed(() => (lazyParams.value.page - 1) * lazyParams.value.rows);
-const STORAGE_KEY = computed(() => `udt_state_${effectiveStorageKey.value}`);
+const STORAGE_KEY   = computed(() => `udt_state_${effectiveStorageKey.value}`);
 
-const items = ref<any[]>([]);
-const totalRecords = ref<number>(0);
-const loading = ref<boolean>(true);
+// ====================== REACTIVE STATE ======================
+
+const items          = ref<any[]>([]);
+const totalRecords   = ref<number>(0);
+const loading        = ref<boolean>(true);
 const downloadLoading = ref<boolean>(false);
 
 const columnsPopover = ref<InstanceType<typeof Popover> | null>(null);
 const filtersPopover = ref<InstanceType<typeof Popover> | null>(null);
 
 const isFiltersPanelOpen = ref<boolean>(true);
-const columnsState = ref<ColumnConfig[]>([]);
-const filtersState = ref<FilterConfig[]>([]);
-const activeFilters = reactive<Record<string, any>>({});
-const lazyParams = ref<LazyParams>({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
+const columnsState       = ref<ColumnConfig[]>([]);
+const filtersState       = ref<FilterConfig[]>([]);
+const activeFilters      = reactive<Record<string, any>>({});
+const lazyParams         = ref<LazyParams>({ page: 1, rows: 10, sortField: 'id', sortOrder: 'desc' });
 
-const isScrollEnabled = ref<boolean>(true);
-const topScrollContainer = ref<HTMLElement | null>(null);
+const isScrollEnabled       = ref<boolean>(true);
+const topScrollContainer    = ref<HTMLElement | null>(null);
 const bottomScrollContainer = ref<HTMLElement | null>(null);
-const dtWrapper = ref<HTMLElement | null>(null);
-const tableInnerWidth = ref<number>(0);
+const dtWrapper             = ref<HTMLElement | null>(null);
+const tableInnerWidth       = ref<number>(0);
 
 let tableScrollElement: HTMLElement | null = null;
-let resizeObserver: ResizeObserver | null = null;
+let resizeObserver: ResizeObserver | null  = null;
 let isInitializing = false;
 let filterTimeout: ReturnType<typeof setTimeout> | null = null;
 
-let isSyncingTop = false;
+let isSyncingTop    = false;
 let isSyncingBottom = false;
-let isSyncingTable = false;
+let isSyncingTable  = false;
 
 // ====================== FILTER HANDLERS ======================
 
@@ -487,34 +510,28 @@ const loadStateFromStorage = (): any => {
 
 const formatDateToLocalString = (date: Date | null): string => {
   if (!date || isNaN(date.getTime())) return '';
-  const day = String(date.getDate()).padStart(2, '0');
+  const day   = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
+  const year  = date.getFullYear();
   return `${day}.${month}.${year}`;
 };
 
 const initState = () => {
   isInitializing = true;
-  const savedState = loadStateFromStorage();
+  const savedState  = loadStateFromStorage();
   const defaultRows = effectiveRowsPerPageOptions.value[0] || 10;
 
   isFiltersPanelOpen.value = savedState?.isFiltersPanelOpen ?? effectiveFiltersExpanded.value;
-
-  isScrollEnabled.value = externalConfig.value?.scrollable ?? savedState?.isScrollEnabled ?? effectiveScrollable.value;
+  isScrollEnabled.value    = externalConfig.value?.scrollable ?? savedState?.isScrollEnabled ?? effectiveScrollable.value;
 
   // Columns
   columnsState.value = effectiveColumns.value.map((col: ColumnConfig) => {
-    if (col.type === 'computed') {
-      return { ...col, visible: true };
-    }
-
+    if (col.type === 'computed') return { ...col, visible: true };
     const savedCol = savedState?.columns?.find((c: any) => c.name === col.name);
-
     return {
       ...col,
-      visible: savedCol?.visible ?? (col.visible !== false),
-      // зберігаємо класи
-      class: col.class || col.attributes?.class,
+      visible:   savedCol?.visible ?? (col.visible !== false),
+      class:     col.class || col.attributes?.class,
       bodyClass: col.bodyClass || col.class,
     };
   });
@@ -527,7 +544,6 @@ const initState = () => {
 
   // Active Filters
   Object.keys(activeFilters).forEach(key => delete activeFilters[key]);
-
   effectiveFilters.value.forEach((f: FilterConfig) => {
     const savedValue = savedState?.activeFilters?.[f.name];
     if ((f.type === 'date' || f.type === 'year') && savedValue) {
@@ -544,8 +560,8 @@ const initState = () => {
   });
 
   lazyParams.value = {
-    page: savedState?.lazyParams?.page || 1,
-    rows: savedState?.lazyParams?.rows || defaultRows,
+    page:      savedState?.lazyParams?.page      || 1,
+    rows:      savedState?.lazyParams?.rows      || defaultRows,
     sortField: savedState?.lazyParams?.sortField || Object.keys(effectiveOrder.value)[0] || 'id',
     sortOrder: savedState?.lazyParams?.sortOrder || 'desc'
   };
@@ -573,16 +589,14 @@ const saveStateToStorage = () => {
     }
   });
 
-  const stateToSave = {
+  localStorage.setItem(STORAGE_KEY.value, JSON.stringify({
     isFiltersPanelOpen: isFiltersPanelOpen.value,
-    isScrollEnabled: isScrollEnabled.value,
-    lazyParams: { ...lazyParams.value },
-    columns: columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
-    filtersVisibility: filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
-    activeFilters: cleanedActiveFilters
-  };
-
-  localStorage.setItem(STORAGE_KEY.value, JSON.stringify(stateToSave));
+    isScrollEnabled:    isScrollEnabled.value,
+    lazyParams:         { ...lazyParams.value },
+    columns:            columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
+    filtersVisibility:  filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
+    activeFilters:      cleanedActiveFilters
+  }));
 };
 
 // ====================== FILTERS & DATA ======================
@@ -596,7 +610,7 @@ const getCleanedFilters = () => {
 
     if (f.type === 'date' && val instanceof Date) {
       if (!isNaN(val.getTime())) {
-        const offset = val.getTimezoneOffset();
+        const offset   = val.getTimezoneOffset();
         const corrected = new Date(val.getTime() - offset * 60 * 1000);
         cleaned[f.name] = corrected.toISOString().split('T')[0];
       }
@@ -604,14 +618,12 @@ const getCleanedFilters = () => {
       cleaned[f.name] = val.getFullYear();
     } else if (f.type === 'date_range' && Array.isArray(val)) {
       const [start, end] = val;
-      if (start && end) {
-        cleaned[f.name] = `${formatDateToLocalString(start)}-${formatDateToLocalString(end)}`;
-      }
+      if (start && end) cleaned[f.name] = `${formatDateToLocalString(start)}-${formatDateToLocalString(end)}`;
     } else if (f.type === 'multiselect' && Array.isArray(val) && val.length > 0) {
       cleaned[f.name] = val;
     } else if (f.type === 'range') {
       if (val?.from !== null && val?.from !== undefined) cleaned[`${f.name}_from`] = val.from;
-      if (val?.to !== null && val?.to !== undefined) cleaned[`${f.name}_to`] = val.to;
+      if (val?.to   !== null && val?.to   !== undefined) cleaned[`${f.name}_to`]   = val.to;
     } else if (f.type !== 'range' && val !== '' && val !== null && val !== undefined) {
       cleaned[f.name] = val;
     }
@@ -624,12 +636,6 @@ const loadData = async () => {
   if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
   loading.value = true;
 
-  const payload = {
-    pager: { page: lazyParams.value.page, size: lazyParams.value.rows },
-    order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
-    filters: getCleanedFilters()
-  };
-
   try {
     const response = await fetch(effectiveRequestUrl.value!, {
       method: 'POST',
@@ -637,11 +643,16 @@ const loadData = async () => {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        pager:   { page: lazyParams.value.page, size: lazyParams.value.rows },
+        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
+        filters: getCleanedFilters()
+      })
     });
+
     const data: ApiResponse = await response.json();
     if (data.results) {
-      items.value = data.results.list || [];
+      items.value        = data.results.list  || [];
       totalRecords.value = data.results.count || 0;
       nextTick(() => updateScrollDimensions());
     }
@@ -652,26 +663,110 @@ const loadData = async () => {
   }
 };
 
-const exportData = async () => {
+// ====================== EXPORT ======================
+
+/**
+ * Прибирає HTML-теги зі значення, якщо вони є.
+ * Потрібно, щоб у клітинку файлу потрапив чистий текст.
+ */
+const stripHtml = (value: any): string => {
+  if (typeof value !== 'string') return String(value ?? '');
+  const div = document.createElement('div');
+  div.innerHTML = value;
+  return div.textContent || div.innerText || '';
+};
+
+/**
+ * Тригерує завантаження файлу у браузері через тимчасовий <a>.
+ */
+const triggerDownload = (blob: Blob, filename: string): void => {
+  const url = window.URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+};
+
+/**
+ * Генерує та завантажує XLSX-файл на клієнті.
+ * Використовує SheetJS (xlsx).
+ */
+const generateXlsx = (data: ClientExportResponse): void => {
+  const { columns, rows, filename } = data;
+
+  const headerRow = columns.map(col => col.header);
+  const dataRows  = rows.map(row => columns.map(col => stripHtml(row[col.key])));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+
+  // Ширини колонок з конфігу сервера або 20 за замовчуванням
+  ws['!cols'] = columns.map(col => ({ wch: col.width || 20 }));
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Звіт');
+
+  const outputName = filename || effectiveDownloadFilename.value;
+  XLSX.writeFile(wb, `${outputName}.xlsx`);
+};
+
+/**
+ * Генерує та завантажує CSV-файл на клієнті.
+ * Використовує SheetJS для перетворення даних у CSV-рядок,
+ * а потім зберігає його як Blob з кодуванням UTF-8 + BOM
+ * (BOM потрібен для коректного відкриття в Excel).
+ */
+const generateCsv = (data: ClientExportResponse): void => {
+  const { columns, rows, filename } = data;
+
+  const headerRow = columns.map(col => col.header);
+  const dataRows  = rows.map(row => columns.map(col => stripHtml(row[col.key])));
+
+  const ws  = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+
+  // sheet_to_csv повертає рядок з комами як роздільником
+  const csv = XLSX.utils.sheet_to_csv(ws);
+
+  // UTF-8 BOM (\uFEFF) — щоб Excel правильно відкривав кирилицю
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+
+  const outputName = filename || effectiveDownloadFilename.value;
+  triggerDownload(blob, `${outputName}.csv`);
+};
+
+/**
+ * Головна функція експорту.
+ * Робить запит на сервер, отримує JSON з { columns, rows, filename? }
+ * і генерує файл потрібного формату (xlsx або csv) на клієнті.
+ */
+const exportData = async (): Promise<void> => {
   downloadLoading.value = true;
-  const payload = {
-    filters: getCleanedFilters(),
-    order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
-  };
 
   try {
     const response = await fetch(effectiveRequestUrl.value + '-export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '' },
-      body: JSON.stringify(payload)
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+      },
+      body: JSON.stringify({
+        filters: getCleanedFilters(),
+        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
+      })
     });
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `report_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+
+    if (!response.ok) throw new Error(`Server error: ${response.status} ${response.statusText}`);
+
+    const data: ClientExportResponse = await response.json();
+
+    // Розгалуження за форматом
+    if (effectiveDownloadFormat.value === 'csv') {
+      generateCsv(data);
+    } else {
+      generateXlsx(data);
+    }
   } catch (error) {
     console.error('Помилка експорту:', error);
   } finally {
@@ -685,18 +780,18 @@ const updateScrollDimensions = () => {
   if (!isScrollEnabled.value || !dtWrapper.value) return;
 
   const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') as HTMLElement;
-  const tableEl = dtWrapper.value.querySelector('.p-datatable-table') as HTMLElement;
+  const tableEl             = dtWrapper.value.querySelector('.p-datatable-table') as HTMLElement;
 
   if (innerTableContainer && tableEl) {
-    tableScrollElement = innerTableContainer;
-    tableInnerWidth.value = tableEl.offsetWidth;
+    tableScrollElement       = innerTableContainer;
+    tableInnerWidth.value    = tableEl.offsetWidth;
 
     tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
     tableScrollElement.addEventListener('scroll', syncTableToScrollbars);
 
     nextTick(() => {
       const scrollLeft = tableScrollElement!.scrollLeft;
-      if (topScrollContainer.value) topScrollContainer.value.scrollLeft = scrollLeft;
+      if (topScrollContainer.value)    topScrollContainer.value.scrollLeft    = scrollLeft;
       if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = scrollLeft;
     });
   }
@@ -724,16 +819,13 @@ const syncTableToScrollbars = () => {
   if (isSyncingTop || isSyncingBottom) return;
   isSyncingTable = true;
   const pos = tableScrollElement!.scrollLeft;
-  if (topScrollContainer.value) topScrollContainer.value.scrollLeft = pos;
+  if (topScrollContainer.value)    topScrollContainer.value.scrollLeft    = pos;
   if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = pos;
   setTimeout(() => { isSyncingTable = false; }, 20);
 };
 
 const setupScrollSync = () => {
-  if (!isScrollEnabled.value) {
-    destroyScrollSync();
-    return;
-  }
+  if (!isScrollEnabled.value) { destroyScrollSync(); return; }
   nextTick(() => {
     updateScrollDimensions();
     if (dtWrapper.value && !resizeObserver) {
@@ -744,13 +836,8 @@ const setupScrollSync = () => {
 };
 
 const destroyScrollSync = () => {
-  if (tableScrollElement) {
-    tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
-  }
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
+  if (tableScrollElement) tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
+  if (resizeObserver)     { resizeObserver.disconnect(); resizeObserver = null; }
 };
 
 const handleScrollToggle = () => {
@@ -765,13 +852,9 @@ const onColumnVisibilityChange = () => {
 
 // ====================== OTHER HANDLERS ======================
 
-const toggleFiltersPanel = () => {
-  isFiltersPanelOpen.value = !isFiltersPanelOpen.value;
-  saveStateToStorage();
-};
-
-const toggleColumnsPopover = (event: Event) => columnsPopover.value?.toggle(event);
-const toggleFiltersPopover = (event: Event) => filtersPopover.value?.toggle(event);
+const toggleFiltersPanel    = () => { isFiltersPanelOpen.value = !isFiltersPanelOpen.value; saveStateToStorage(); };
+const toggleColumnsPopover  = (event: Event) => columnsPopover.value?.toggle(event);
+const toggleFiltersPopover  = (event: Event) => filtersPopover.value?.toggle(event);
 
 const onPage = (event: any) => {
   lazyParams.value.page = event.page + 1;
@@ -787,22 +870,17 @@ const onSort = (event: any) => {
   loadData();
 };
 
-const onFilterInput = () => debounceFilter();
-const onFilterClear = () => triggerFilterApply();
+const onFilterInput     = () => debounceFilter();
+const onFilterClear     = () => triggerFilterApply();
 const onFilterDateUpdate = () => triggerFilterApply();
 
 const clearAllFilters = () => {
   if (filterTimeout) clearTimeout(filterTimeout);
   effectiveFilters.value.forEach(f => {
-    if (f.type === 'range') {
-      activeFilters[f.name] = { from: null, to: null };
-    } else if (f.type === 'multiselect') {
-      activeFilters[f.name] = [];
-    } else if (['date', 'date_range', 'year'].includes(f.type)) {
-      activeFilters[f.name] = null;
-    } else {
-      activeFilters[f.name] = '';
-    }
+    if (f.type === 'range')                              activeFilters[f.name] = { from: null, to: null };
+    else if (f.type === 'multiselect')                   activeFilters[f.name] = [];
+    else if (['date', 'date_range', 'year'].includes(f.type)) activeFilters[f.name] = null;
+    else                                                 activeFilters[f.name] = '';
   });
   triggerFilterApply();
 };
@@ -816,16 +894,13 @@ const triggerFilterApply = () => {
 // ====================== LIFECYCLE ======================
 
 watch(() => effectiveStorageKey.value, (newKey) => {
-  if (newKey && newKey !== 'undefined') {
-    initState();
-    loadData();
-  }
+  if (newKey && newKey !== 'undefined') { initState(); loadData(); }
 }, { immediate: true });
 
 watch(activeFilters, () => { saveStateToStorage(); }, { deep: true });
 
 const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible));
-const showDownloadBtn = computed(() => effectiveShowDownload.value);
+const showDownloadBtn   = computed(() => effectiveShowDownload.value);
 
 onMounted(() => {
   document.addEventListener('datatable:setConfig', (e: any) => {
@@ -841,11 +916,8 @@ onMounted(() => {
   }
 });
 
-onBeforeUnmount(() => {
-  destroyScrollSync();
-});
+onBeforeUnmount(() => destroyScrollSync());
 </script>
-
 <style scoped>
 .universal-dt-container { font-family: sans-serif; }
 .mb-4 { margin-bottom: 1.5rem; }
@@ -910,14 +982,12 @@ onBeforeUnmount(() => {
   overflow-y: hidden;
   margin-top: 4px;
   height: 13px;
-  /* Прилипання до низу сторінки — задайте bottom: 0 або будь-яке потрібне значення */
   position: sticky;
   bottom: 0;
   left: 0;
   width: 100%;
   z-index: 1;
   display: block;
-  /* Фон щоб скролбар не "висів" прозоро при прилипанні */
   background: #ffffff;
 }
 
@@ -964,4 +1034,3 @@ onBeforeUnmount(() => {
 :deep(.p-datatable-table-container)::-webkit-scrollbar {  display: none;}
 :deep(.p-datatable-table-container) {  -ms-overflow-style: none;  /* IE / Edge */  scrollbar-width: none;     /* Firefox */}
 </style>
-

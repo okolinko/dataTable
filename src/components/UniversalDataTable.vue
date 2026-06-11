@@ -68,7 +68,7 @@
                     @change="handleScrollToggle"
                 />
                 <label for="toggle-top-scroll" class="ml-2 font-bold cursor-pointer select-none text-primary">
-                  Верхній/нижній скрол
+                  Верхній скрол
                 </label>
               </div>
               <div v-for="col in columnsState" :key="col.name || col.title" class="flex align-items-center m-2">
@@ -736,32 +736,30 @@ const generateCsv = (data: ClientExportResponse): void => {
   triggerDownload(blob, `${outputName}.csv`);
 };
 
-/**
- * Головна функція експорту.
- * Робить запит на сервер, отримує JSON з { columns, rows, filename? }
- * і генерує файл потрібного формату (xlsx або csv) на клієнті.
- */
 const exportData = async (): Promise<void> => {
   downloadLoading.value = true;
 
   try {
-    const response = await fetch(effectiveRequestUrl.value + '-export', {
+    const payload = {
+      filters: getCleanedFilters(),
+      order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
+    };
+
+    const response = await fetch(`${effectiveRequestUrl.value}-export`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body: JSON.stringify({
-        filters: getCleanedFilters(),
-        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
-      })
+      body: JSON.stringify(payload)
     });
 
-    if (!response.ok) throw new Error(`Server error: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
 
     const data: ClientExportResponse = await response.json();
 
-    // Розгалуження за форматом
     if (effectiveDownloadFormat.value === 'csv') {
       generateCsv(data);
     } else {
@@ -769,6 +767,7 @@ const exportData = async (): Promise<void> => {
     }
   } catch (error) {
     console.error('Помилка експорту:', error);
+    // Тут можна додати toast-повідомлення, якщо використовуєш PrimeVue Toast
   } finally {
     downloadLoading.value = false;
   }
@@ -1019,6 +1018,13 @@ onBeforeUnmount(() => destroyScrollSync());
   align-self: center;
 }
 
+.max-h-popover {
+  max-height: 600px !important;
+}
+.gap-2 {
+  gap: unset !important;
+}
+
 .bottom-scrollbar-container::-webkit-scrollbar { height: 9px; }
 .bottom-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
 .bottom-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
@@ -1033,4 +1039,15 @@ onBeforeUnmount(() => destroyScrollSync());
 :deep(.actions-column a svg:hover) { fill: #e8a51f; }
 :deep(.p-datatable-table-container)::-webkit-scrollbar {  display: none;}
 :deep(.p-datatable-table-container) {  -ms-overflow-style: none;  /* IE / Edge */  scrollbar-width: none;     /* Firefox */}
+
+/* Якщо bodyClass застосовується на td */
+:deep(.p-datatable-tbody td.text-center) {
+  text-align: center !important;
+}
+:deep(.p-datatable-tbody td.text-right) {
+  text-align: right !important;
+}
+:deep(.p-datatable-tbody td.text-left) {
+  text-align: left !important;
+}
 </style>

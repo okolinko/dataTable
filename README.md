@@ -256,21 +256,23 @@ document.addEventListener('DOMContentLoaded', init);
 
 ### Загальні параметри
 
-| Параметр | Тип | За замовч. | Опис |
-|---|---|---|---|
-| `requestUrl` | `string` | — | URL для POST-запиту даних таблиці |
-| `storageKey` | `string` | — | Унікальний ключ для збереження стану в `localStorage` |
-| `columns` | `ColumnConfig[]` | — | Масив конфігурацій колонок |
-| `filters` | `FilterConfig[]` | `[]` | Масив конфігурацій фільтрів |
-| `order` | `Record<string, 'asc'\|'desc'>` | `{}` | Сортування за замовчуванням |
-| `showDownload` | `boolean` | `false` | Показати кнопку "Завантажити" |
-| `filtersExpanded` | `boolean` | `true` | Панель фільтрів розгорнута за замовчуванням |
-| `rowsPerPageOptions` | `number[]` | `[10,25,50]` | Варіанти кількості рядків на сторінці |
-| `scrollable` | `boolean` | `true` | Увімкнути верхній/нижній скролбар |
-| `toolbarStart` | `string` | `''` | HTML-рядок для лівої частини тулбара |
-| `downloadFilename` | `string` | `'export'` | Назва файлу без розширення |
-| `downloadFormat` | `'xlsx'\|'csv'` | `'xlsx'` | Формат файлу при завантаженні |
-| `paginationMode` | `'server'\|'client'` | `'server'` | Режим пагінації (див. [Режими роботи](#режими-роботи-таблиці)) |
+| Параметр | Тип                             | За замовч.   | Опис                                                           |
+|---|---------------------------------|--------------|----------------------------------------------------------------|
+| `requestUrl` | `string`                        | —            | URL для POST-запиту даних таблиці                              |
+| `storageKey` | `string`                        | —            | Унікальний ключ для збереження стану в `localStorage`          |
+| `columns` | `ColumnConfig[]`                | —            | Масив конфігурацій колонок                                     |
+| `filters` | `FilterConfig[]`                | `[]`         | Масив конфігурацій фільтрів                                    |
+| `order` | `Record<string, 'asc'\|'desc'>` | `{}`         | Сортування за замовчуванням                                    |
+| `showDownload` | `boolean`                       | `false`      | Показати кнопку "Завантажити"                                  |
+| `filtersExpanded` | `boolean`                       | `true`       | Панель фільтрів розгорнута за замовчуванням                    |
+| `rowsPerPageOptions` | `number[]`                      | `[10,25,50]` | Варіанти кількості рядків на сторінці                          |
+| `scrollable` | `boolean`                       | `true`       | Увімкнути верхній/нижній скролбар                              |
+| `toolbarStart` | `string`                        | `''`         | HTML-рядок для лівої частини тулбара                           |
+| `downloadFilename` | `string`                        | `'export'`   | Назва файлу без розширення                                     |
+| `downloadFormat` | `'xlsx'\|'csv'`                 | `'xlsx'`     | Формат файлу при завантаженні                                  |
+| `paginationMode` | `'server'\|'client'`            | `'server'`   | Режим пагінації (див. [Режими роботи](#режими-роботи-таблиці)) |
+| `showColumnsButton` |  `boolean`              | `'true'`     | Показати кнопку "Колонки"                                      |
+
 
 ---
 

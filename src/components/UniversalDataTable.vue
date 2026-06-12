@@ -50,6 +50,7 @@
           </Popover>
 
           <Button
+              v-if="effectiveShowColumnsButton"
               type="button"
               class="p-button-outlined p-button-secondary custom-svg-btn"
               @click="toggleColumnsPopover"
@@ -186,7 +187,7 @@
 
             <DatePicker
                 v-else-if="filter.type === 'date_range'"
-                :key="'date-range-' + filter.name"
+                :key="'date-range-' + filter.name + '-' + (activeFilters[filter.name] ? activeFilters[filter.name].map(d => d?.getTime()).join('-') : 'empty')"
                 :inputId="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
                 selectionMode="range"
@@ -232,7 +233,7 @@
                 :key="'text-' + filter.name"
                 :id="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
-                @input="onFilterInput"
+                @input="(event) => onTextFilterInput(event, filter.name)"
                 :placeholder="filter.placeholder || 'Введіть значення...'"
             />
           </div>
@@ -453,6 +454,7 @@ interface TableConfig {
   filters?: FilterConfig[];
   order?: Record<string, 'asc' | 'desc'>;
   showDownload?: boolean;
+  showColumnsButton?: boolean;
   filtersExpanded?: boolean;
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
@@ -478,6 +480,7 @@ const props = defineProps<{
   filtersConfig?: FilterConfig[];
   defaultOrder?: Record<string, 'asc' | 'desc'>;
   showDownload?: boolean;
+  showColumnsButton?: boolean;
   filtersExpanded?: boolean;
   rowsPerPageOptions?: number[];
   scrollable?: boolean;
@@ -512,6 +515,9 @@ const effectiveScrollable         = computed(() => externalConfig.value?.scrolla
 const effectiveToolbarStart       = computed(() => externalConfig.value?.toolbarStart       || props.toolbarStart   || '');
 const effectiveDownloadFilename   = computed(() => externalConfig.value?.downloadFilename   || props.downloadFilename || 'report');
 const effectiveDownloadFormat     = computed<DownloadFormat>(() => externalConfig.value?.downloadFormat || props.downloadFormat || 'xlsx');
+const effectiveShowColumnsButton = computed(() =>
+    externalConfig.value?.showColumnsButton ?? props.showColumnsButton ?? true
+);
 
 // Режим пагінації: 'server' (за замовч.) або 'client'
 const effectivePaginationMode = computed<PaginationMode>(() =>
@@ -598,71 +604,98 @@ const getCellText = (row: any, col: ColumnConfig): string => {
  */
 const applyClientFilters = (row: any): boolean => {
   for (const f of filtersState.value) {
-    if (!f.visible) continue;
+    if (!f.visible) {
+      continue;
+    }
     const val = activeFilters[f.name];
-
     if (f.type === 'range') {
       const rowVal = Number(row[f.name]);
-      if (val?.from !== null && val?.from !== undefined && rowVal < val.from) return false;
-      if (val?.to   !== null && val?.to   !== undefined && rowVal > val.to)   return false;
+      if (val?.from !== null && val?.from !== undefined && rowVal < val.from) {
+        return false;
+      }
+      if (val?.to   !== null && val?.to   !== undefined && rowVal > val.to)   {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'multiselect') {
-      // Якщо масив порожній або не вибрано жодного значення - пропускаємо фільтр
-      if (!Array.isArray(val) || val.length === 0) continue;
+
+      if (!Array.isArray(val) || val.length === 0) {
+        continue;
+      }
 
       const optValue = f.optionValue || 'value';
       const rowRaw = row[f.name];
-
-      // Перевіряємо, чи є значення рядка в масиві вибраних опцій
       const match = val.some(selectedValue => {
-        // Якщо selectedValue - це об'єкт (наприклад { label: '...', value: '...' })
         if (typeof selectedValue === 'object' && selectedValue !== null) {
           return String(rowRaw) === String(selectedValue[optValue]);
         }
-        // Якщо selectedValue - це примітив (рядок, число)
+
         return String(rowRaw) === String(selectedValue);
       });
 
-      if (!match) return false;
+      if (!match) {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'select') {
-      if (val === null || val === undefined || val === '') continue;
-      if (String(row[f.name]) !== String(val)) return false;
+      if (val === null || val === undefined || val === '') {
+        continue;
+      }
+      if (String(row[f.name]) !== String(val)) {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'integer') {
-      // Пропускаємо, якщо значення null, undefined або пустий рядок
-      if (val === null || val === undefined || val === '') continue;
-      if (Number(row[f.name]) !== Number(val)) return false;
+      if (val === null || val === undefined || val === '') {
+        continue;
+      }
+      if (Number(row[f.name]) !== Number(val)) {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'date') {
-      if (!(val instanceof Date) || isNaN(val.getTime())) continue;
+      if (!(val instanceof Date) || isNaN(val.getTime())) {
+        continue;
+      }
       const offset    = val.getTimezoneOffset();
       const corrected = new Date(val.getTime() - offset * 60 * 1000);
       const filterStr = corrected.toISOString().split('T')[0];
-      if (String(row[f.name]) !== filterStr) return false;
+      if (String(row[f.name]) !== filterStr) {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'year') {
-      if (!(val instanceof Date) || isNaN(val.getTime())) continue;
-      if (String(row[f.name]) !== String(val.getFullYear())) return false;
+      if (!(val instanceof Date) || isNaN(val.getTime())) {
+        continue;
+      }
+      if (String(row[f.name]) !== String(val.getFullYear())) {
+        return false;
+      }
       continue;
     }
 
     if (f.type === 'date_range') {
-      if (!Array.isArray(val) || !val[0] || !val[1]) continue;
+      if (!Array.isArray(val) || !val[0] || !val[1]) {
+        continue;
+      }
       const [start, end] = val as [Date, Date];
       const rowDate = new Date(row[f.name]);
-      if (isNaN(rowDate.getTime())) return false;
-      if (rowDate < start || rowDate > end) return false;
+      if (isNaN(rowDate.getTime())) {
+        return false;
+      }
+      if (rowDate < start || rowDate > end) {
+        return false;
+      }
       continue;
     }
 
@@ -712,32 +745,46 @@ watch(clientFilteredItems, () => { clientFirst.value = 0; });
 
 const onIntegerFilterInput = (event: any, filterName: string) => {
   activeFilters[filterName] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
-  if (isClientMode.value) return; // реактивно, без debounce
+  if (isClientMode.value) {
+    return;
+  }
   debounceFilter();
 };
 
 const onRangeFilterInput = (event: any, filterName: string, field: 'from' | 'to') => {
-  if (!activeFilters[filterName]) activeFilters[filterName] = { from: null, to: null };
+  if (!activeFilters[filterName]) {
+    activeFilters[filterName] = { from: null, to: null };
+  }
   activeFilters[filterName][field] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
-  if (isClientMode.value) return;
+  if (isClientMode.value) {
+    return;
+  }
   debounceFilter();
 };
 
 const onRangeFilterClear = (filterName: string, field: 'from' | 'to') => {
-  if (activeFilters[filterName]) activeFilters[filterName][field] = null;
-  if (isClientMode.value) return;
+  if (activeFilters[filterName]) {
+    activeFilters[filterName][field] = null;
+  }
+  if (isClientMode.value) {
+    return;
+  }
   triggerFilterApply();
 };
 
 const debounceFilter = () => {
-  if (filterTimeout) clearTimeout(filterTimeout);
+  if (filterTimeout) {
+    clearTimeout(filterTimeout);
+  }
   filterTimeout = setTimeout(() => triggerFilterApply(), 500);
 };
 
 // ====================== LOCAL STORAGE ======================
 
 const loadStateFromStorage = (): any => {
-  if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return null;
+  if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') {
+    return null;
+  }
   try {
     const saved = localStorage.getItem(STORAGE_KEY.value);
     return saved ? JSON.parse(saved) : null;
@@ -748,10 +795,13 @@ const loadStateFromStorage = (): any => {
 };
 
 const formatDateToLocalString = (date: Date | null): string => {
-  if (!date || isNaN(date.getTime())) return '';
+  if (!date || isNaN(date.getTime())) {
+    return '';
+  }
   const day   = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year  = date.getFullYear();
+
   return `${day}.${month}.${year}`;
 };
 
@@ -764,7 +814,9 @@ const initState = () => {
   isScrollEnabled.value    = externalConfig.value?.scrollable ?? savedState?.isScrollEnabled ?? effectiveScrollable.value;
 
   columnsState.value = effectiveColumns.value.map((col: ColumnConfig) => {
-    if (col.type === 'computed') return { ...col, visible: true };
+    if (col.type === 'computed') {
+      return { ...col, visible: true };
+    }
     const savedCol = savedState?.columns?.find((c: any) => c.name === col.name);
     return {
       ...col,
@@ -780,17 +832,34 @@ const initState = () => {
   });
 
   Object.keys(activeFilters).forEach(key => delete activeFilters[key]);
+
   effectiveFilters.value.forEach((f: FilterConfig) => {
     const savedValue = savedState?.activeFilters?.[f.name];
+
     if ((f.type === 'date' || f.type === 'year') && savedValue) {
       activeFilters[f.name] = new Date(savedValue);
-    } else if (f.type === 'date_range' && Array.isArray(savedValue)) {
-      activeFilters[f.name] = savedValue.map((d: string | null) => d ? new Date(d) : null);
-    } else if (f.type === 'range') {
-      activeFilters[f.name] = { from: savedValue?.from ?? null, to: savedValue?.to ?? null };
-    } else if (f.type === 'multiselect') {
+    }
+    else if (f.type === 'date_range' && Array.isArray(savedValue)) {
+      // ВАЖЛИВО: переконуємось, що обидва елементи - це Date або null
+      activeFilters[f.name] = savedValue.map((d: string | null) => {
+        if (!d) {
+          return null;
+        }
+        const date = new Date(d);
+        // Перевіряємо, чи дата валідна
+        return isNaN(date.getTime()) ? null : date;
+      });
+    }
+    else if (f.type === 'range') {
+      activeFilters[f.name] = {
+        from: savedValue?.from ?? null,
+        to: savedValue?.to ?? null
+      };
+    }
+    else if (f.type === 'multiselect') {
       activeFilters[f.name] = Array.isArray(savedValue) ? savedValue : [];
-    } else {
+    }
+    else {
       activeFilters[f.name] = savedValue !== undefined ? savedValue : '';
     }
   });
@@ -809,6 +878,20 @@ const initState = () => {
   nextTick(() => {
     isInitializing = false;
     setupScrollSync();
+    forceUpdateDatePickers();
+  });
+};
+const forceUpdateDatePickers = () => {
+  nextTick(() => {
+    effectiveFilters.value.forEach((f: FilterConfig) => {
+      if (f.type === 'date_range' && activeFilters[f.name]) {
+        const currentValue = [...activeFilters[f.name]];
+        activeFilters[f.name] = null;
+        nextTick(() => {
+          activeFilters[f.name] = currentValue;
+        });
+      }
+    });
   });
 };
 
@@ -825,9 +908,12 @@ const saveStateToStorage = () => {
       cleanedActiveFilters[key] = val.toISOString();
     }
     else if (Array.isArray(val)) {
-      cleanedActiveFilters[key] = val.map(item =>
-          item instanceof Date ? item.toISOString() : item
-      );
+      cleanedActiveFilters[key] = val.map(item => {
+        if (item instanceof Date && !isNaN(item.getTime())) {
+          return item.toISOString();
+        }
+        return item;
+      });
     }
     else if (val && typeof val === 'object' && 'from' in val && 'to' in val) {
       cleanedActiveFilters[key] = {
@@ -859,7 +945,9 @@ const saveStateToStorage = () => {
 const getCleanedFilters = () => {
   const cleaned: Record<string, any> = {};
   filtersState.value.forEach(f => {
-    if (!f.visible) return;
+    if (!f.visible) {
+      return;
+    }
     const val = activeFilters[f.name];
     if (f.type === 'date' && val instanceof Date) {
       if (!isNaN(val.getTime())) {
@@ -871,12 +959,18 @@ const getCleanedFilters = () => {
       cleaned[f.name] = val.getFullYear();
     } else if (f.type === 'date_range' && Array.isArray(val)) {
       const [start, end] = val;
-      if (start && end) cleaned[f.name] = `${formatDateToLocalString(start)}-${formatDateToLocalString(end)}`;
+      if (start && end) {
+        cleaned[f.name] = `${formatDateToLocalString(start)}-${formatDateToLocalString(end)}`;
+      }
     } else if (f.type === 'multiselect' && Array.isArray(val) && val.length > 0) {
       cleaned[f.name] = val;
     } else if (f.type === 'range') {
-      if (val?.from !== null && val?.from !== undefined) cleaned[`${f.name}_from`] = val.from;
-      if (val?.to   !== null && val?.to   !== undefined) cleaned[`${f.name}_to`]   = val.to;
+      if (val?.from !== null && val?.from !== undefined) {
+        cleaned[`${f.name}_from`] = val.from;
+      }
+      if (val?.to   !== null && val?.to   !== undefined) {
+        cleaned[`${f.name}_to`]   = val.to;
+      }
     } else if (f.type !== 'range' && val !== '' && val !== null && val !== undefined) {
       cleaned[f.name] = val;
     }
@@ -951,15 +1045,17 @@ const onClientSort = (event: any) => {
 // ====================== EXPORT ======================
 
 const stripHtml = (value: any): string => {
-  if (typeof value !== 'string') return String(value ?? '');
+  if (typeof value !== 'string') {
+    return String(value ?? '');
+  }
   const div = document.createElement('div');
   div.innerHTML = value;
   return div.textContent || div.innerText || '';
 };
 
 const triggerDownload = (blob: Blob, filename: string): void => {
-  const url = window.URL.createObjectURL(blob);
-  const a   = document.createElement('a');
+  const url  = window.URL.createObjectURL(blob);
+  const a    = document.createElement('a');
   a.href     = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -1016,7 +1112,9 @@ const exportData = async (): Promise<void> => {
 // ====================== SCROLL SYNC ======================
 
 const updateScrollDimensions = () => {
-  if (!isScrollEnabled.value || !dtWrapper.value) return;
+  if (!isScrollEnabled.value || !dtWrapper.value) {
+    return;
+  }
   const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') as HTMLElement;
   const tableEl             = dtWrapper.value.querySelector('.p-datatable-table') as HTMLElement;
   if (innerTableContainer && tableEl) {
@@ -1026,36 +1124,54 @@ const updateScrollDimensions = () => {
     tableScrollElement.addEventListener('scroll', syncTableToScrollbars);
     nextTick(() => {
       const scrollLeft = tableScrollElement!.scrollLeft;
-      if (topScrollContainer.value)    topScrollContainer.value.scrollLeft    = scrollLeft;
-      if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = scrollLeft;
+      if (topScrollContainer.value)    {
+        topScrollContainer.value.scrollLeft    = scrollLeft;
+      }
+      if (bottomScrollContainer.value) {
+        bottomScrollContainer.value.scrollLeft = scrollLeft;
+      }
     });
   }
 };
 
 const syncTopToTable = () => {
-  if (!tableScrollElement || isSyncingTable || isSyncingBottom) return;
+  if (!tableScrollElement || isSyncingTable || isSyncingBottom) {
+    return;
+  }
   isSyncingTop = true;
   const pos = topScrollContainer.value!.scrollLeft;
   tableScrollElement.scrollLeft = pos;
-  if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = pos;
+  if (bottomScrollContainer.value) {
+    bottomScrollContainer.value.scrollLeft = pos;
+  }
   setTimeout(() => { isSyncingTop = false; }, 20);
 };
 
 const syncBottomToTable = () => {
-  if (!tableScrollElement || isSyncingTable || isSyncingTop) return;
+  if (!tableScrollElement || isSyncingTable || isSyncingTop) {
+    return;
+  }
   isSyncingBottom = true;
   const pos = bottomScrollContainer.value!.scrollLeft;
   tableScrollElement.scrollLeft = pos;
-  if (topScrollContainer.value) topScrollContainer.value.scrollLeft = pos;
+  if (topScrollContainer.value) {
+    topScrollContainer.value.scrollLeft = pos;
+  }
   setTimeout(() => { isSyncingBottom = false; }, 20);
 };
 
 const syncTableToScrollbars = () => {
-  if (isSyncingTop || isSyncingBottom) return;
+  if (isSyncingTop || isSyncingBottom) {
+    return;
+  }
   isSyncingTable = true;
   const pos = tableScrollElement!.scrollLeft;
-  if (topScrollContainer.value)    topScrollContainer.value.scrollLeft    = pos;
-  if (bottomScrollContainer.value) bottomScrollContainer.value.scrollLeft = pos;
+  if (topScrollContainer.value)    {
+    topScrollContainer.value.scrollLeft = pos;
+  }
+  if (bottomScrollContainer.value) {
+    bottomScrollContainer.value.scrollLeft = pos;
+  }
   setTimeout(() => { isSyncingTable = false; }, 20);
 };
 
@@ -1106,9 +1222,37 @@ const onSort = (event: any) => {
   loadData();
 };
 
-const onFilterInput      = () => { if (!isClientMode.value) debounceFilter(); };
-const onFilterClear      = () => { if (!isClientMode.value) triggerFilterApply(); };
-const onFilterDateUpdate = () => { if (!isClientMode.value) triggerFilterApply(); };
+const onFilterInput = (event: any, filterName?: string) => {
+
+  if (filterName) {
+    const value = event.target?.value || event.value;
+    if (typeof value === 'string') {
+      activeFilters[filterName] = value.trim();
+    }
+  }
+
+  if (!isClientMode.value) debounceFilter();
+};
+const onTextFilterInput = (event: any, filterName: string) => {
+  const rawValue = event.target?.value || '';
+  const trimmedValue = rawValue.trim();
+
+  if (activeFilters[filterName] !== trimmedValue) {
+    activeFilters[filterName] = trimmedValue;
+  }
+
+  if (!isClientMode.value) debounceFilter();
+};
+const onFilterClear      = () => {
+  if (!isClientMode.value) {
+    triggerFilterApply();
+  }
+};
+const onFilterDateUpdate = () => {
+  if (!isClientMode.value) {
+    triggerFilterApply();
+  }
+};
 
 const clearAllFilters = async () => {
   if (filterTimeout) {
@@ -1128,7 +1272,7 @@ const clearAllFilters = async () => {
       activeFilters[f.name] = [];
     }
     else if (f.type === 'date_range') {
-      activeFilters[f.name] = [null, null];
+      activeFilters[f.name] = undefined;
     }
     else {
       // date, year, integer, select, text і т.д.
@@ -1158,7 +1302,9 @@ const triggerFilterApply = () => {
 // ====================== LIFECYCLE ======================
 
 watch(() => effectiveStorageKey.value, (newKey) => {
-  if (newKey && newKey !== 'undefined') { initState(); loadData(); }
+  if (newKey && newKey !== 'undefined') {
+    initState(); loadData();
+  }
 }, { immediate: true });
 
 watch(activeFilters, () => { saveStateToStorage(); }, { deep: true });

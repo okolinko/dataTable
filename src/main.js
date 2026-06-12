@@ -65,6 +65,7 @@ document.addEventListener('datatable:setConfig', (event) => {
         filtersConfig: config.filters || [],
         defaultOrder: config.order || {},
         showDownload: config.showDownload ?? false,
+        showColumnsButton: config.showColumnsButton ?? true,
         filtersExpanded: config.filtersExpanded ?? true,
         rowsPerPageOptions: config.rowsPerPageOptions || [10, 25, 50, 100],
         scrollable: config.scrollable ?? true,

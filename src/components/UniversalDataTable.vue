@@ -1325,7 +1325,7 @@ onBeforeUnmount(() => destroyScrollSync());
 </script>
 
 <style scoped>
- /* ====================== ЗАГАЛЬНІ УТИЛІТИ ====================== */
+/* ====================== ЗАГАЛЬНІ УТИЛІТИ ====================== */
 .universal-dt-container { font-family: sans-serif; }
 .mb-4 { margin-bottom: 1.5rem; }
 .mb-3 { margin-bottom: 1rem; }
@@ -1569,6 +1569,18 @@ onBeforeUnmount(() => destroyScrollSync());
   overflow: hidden;
 }
 
+.p-datatable-tbody td.text-center {
+  text-align: center !important;
+}
+
+.p-datatable-tbody td.text-right {
+  text-align: right !important;
+}
+
+.p-datatable-tbody td.text-left {
+  text-align: left !important;
+}
+
 /* ====================== DEEP: ТАБЛИЦЯ (PRIMEVUE OVERRIDES) ====================== */
 
 /* Ховаємо нативний горизонтальний скрол таблиці — використовуємо кастомний */
@@ -1578,18 +1590,46 @@ onBeforeUnmount(() => destroyScrollSync());
   scrollbar-width: none;    /* Firefox */
 }
 
+/* ВИПРАВЛЕНО: центрування тексту в комірках */
+:deep(.p-datatable-tbody td.text-center) {
+  text-align: center !important;
+}
+
+:deep(.p-datatable-tbody td.text-right) {
+  text-align: right !important;
+}
+
+:deep(.p-datatable-tbody td.text-left) {
+  text-align: left !important;
+}
+
 /* Статуси у колонках */
-:deep(.success) { color: #0a570a; font-weight: 600; }
-:deep(.failed)  { color: #bb0e4a; font-weight: 600; }
+:deep(.success) {
+  color: #0a570a;
+  font-weight: 600;
+}
+
+:deep(.failed) {
+  color: #bb0e4a;
+  font-weight: 600;
+}
 
 /* Колонка дій */
-:deep(.actions-column) { width: max-content; }
-:deep(.actions-column a svg) { fill: #244464; transition: fill 0.2s; margin-right: 5px; }
-:deep(.actions-column a svg:hover) { fill: #e8a51f; }
+:deep(.actions-column) {
+  width: max-content;
+}
 
-/* Вирівнювання тексту у комірках */
-:deep(.p-datatable-tbody td.text-center) { text-align: center !important; }
-:deep(.p-datatable-tbody td.text-right)  { text-align: right !important; }
-:deep(.p-datatable-tbody td.text-left)   { text-align: left !important; }
+:deep(.actions-column a svg) {
+  fill: #244464;
+  transition: fill 0.2s;
+  margin-right: 5px;
+}
+
+:deep(.actions-column a svg:hover) {
+  fill: #e8a51f;
+}
+:deep(.text-center) {
+  text-align: center !important;
+}
 
 </style>

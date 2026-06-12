@@ -1,11 +1,12 @@
 # UniversalDataTable
 
-Універсальний компонент таблиці даних на базі Vue 3 + PrimeVue. Підтримує ліниве завантаження, фільтрацію, сортування, керування видимістю колонок, збереження стану у `localStorage` та клієнтський експорт у форматах `xlsx` / `csv`.
+Універсальний компонент таблиці даних на базі Vue 3 + PrimeVue. Підтримує два режими роботи (серверний та клієнтський), фільтрацію, сортування, керування видимістю колонок, збереження стану у `localStorage` та клієнтський експорт у форматах `xlsx` / `csv`.
 
 ---
 
 ## Ключові можливості
 
+- Два режими роботи: **серверний** (пагінація на сервері) та **клієнтський** (всі дані на клієнті)
 - Кастомні горизонтальні скролбари (верхній + нижній) з синхронізацією
 - Гнучка система фільтрів (text, select, multiselect, date, date_range, year, range, integer)
 - Підтримка обчислюваних колонок (`computed`) та кастомних рендерерів (`value`)
@@ -14,6 +15,66 @@
 - Кастомний контент у тулбарі (`toolbarStart`)
 - Підтримка кастомних CSS-класів для колонок
 - Українська локалізація та кастомні теми PrimeVue
+
+---
+
+## Режими роботи таблиці
+
+Компонент підтримує два режими роботи, які визначаються параметром `paginationMode`:
+
+### 1. Серверний режим (`paginationMode: 'server'`) — за замовчуванням
+
+**Принцип роботи:**
+- При кожній зміні сторінки, сортуванні або фільтрі виконується запит до сервера
+- Сервер повертає ТІЛЬКИ дані для поточної сторінки
+- Підходить для великих таблиць (>5000 рядків)
+
+**Переваги:**
+- Мінімальне використання пам'яті браузера
+- Швидке початкове завантаження
+- Фільтрація на стороні сервера (можна використовувати індекси БД)
+
+**Недоліки:**
+- Затримка при кожній зміні сторінки/фільтра
+- Більше навантаження на сервер
+
+### 2. Клієнтський режим (`paginationMode: 'client'`)
+
+**Принцип роботи:**
+- При ініціалізації виконується ОДИН запит до сервера
+- Сервер повертає ВСІ дані (без пагінації)
+- Вся подальша фільтрація, сортування та пагінація відбуваються на клієнті
+
+**Переваги:**
+- Миттєва реакція на зміну фільтрів та сортування
+- Відсутність затримок мережі
+- Глобальний пошук по всіх колонках (доступний тільки в цьому режимі)
+- Зменшення навантаження на сервер
+
+**Недоліки:**
+- Більше використання пам'яті браузера
+- Повільніше початкове завантаження при великій кількості даних
+- Не підходить для таблиць з >2000 рядків
+
+**Особливості клієнтського режиму:**
+- Глобальний пошук з'являється над панеллю фільтрів
+- Фільтри застосовуються миттєво (без debounce)
+- Панель фільтрів та глобальний пошук працюють разом
+- При скиданні фільтрів сторінка скидається на першу
+
+### Коли використовувати клієнтський режим?
+
+✅ **Доцільно використовувати:**
+- Таблиці з <2000 рядків
+- Часта зміна фільтрів/пошуку
+- Важлива швидкість взаємодії
+- Дані рідко оновлюються на сервері
+
+❌ **Не рекомендується:**
+- Таблиці з >2000 рядків
+- Обмеження пам'яті на клієнті
+- Дані часто оновлюються на сервері
+- Складні фільтри на стороні БД
 
 ---
 
@@ -35,7 +96,6 @@ npm run dev
 npm run build
 ```
 
-Опис функціональних можливостей компонрента
 ---
 
 ## Зміст
@@ -51,13 +111,16 @@ npm run build
 - [Всі типи колонок з прикладами](#всі-типи-колонок-з-прикладами)
 - [Всі типи фільтрів з прикладами](#всі-типи-фільтрів-з-прикладами)
 - [API сервера](#api-сервера)
-  - [Запит даних](#запит-даних)
+  - [Запит даних (серверний режим)](#запит-даних-серверний-режим)
+  - [Запит даних (клієнтський режим)](#запит-даних-клієнтський-режим)
   - [Відповідь даних](#відповідь-даних)
   - [Запит експорту](#запит-експорту)
   - [Відповідь експорту](#відповідь-експорту)
 - [Повний приклад ініціалізації](#повний-приклад-ініціалізації)
 - [Збереження стану](#збереження-стану)
 - [Кастомна тема](#кастомна-тема)
+- [CSS-класи для значень колонок](#css-класи-для-значень-колонок)
+- [Важливі особливості та обмеження](#важливі-особливості-та-обмеження)
 
 ---
 
@@ -88,9 +151,9 @@ src/
 
 В HTML-сторінці обов'язково повинен бути контейнер з `id="datatable"`:
 
-
-
-<code-artifact index="0"></code-artifact>
+```html
+<div id="datatable"></div>
+```
 
 ---
 
@@ -147,6 +210,7 @@ document.addEventListener('datatable:setConfig', (event: any) => {
         toolbarStart:       config.toolbarStart   || '',
         downloadFilename:   config.downloadFilename || 'export',
         downloadFormat:     config.downloadFormat  || 'xlsx',
+        paginationMode:     config.paginationMode  || 'server',
     });
 
     app.use(PrimeVue, {
@@ -178,6 +242,7 @@ const init = () => {
             scrollable:         true,
             downloadFilename:   'users_export',
             downloadFormat:     'xlsx',
+            paginationMode:     'server', // 'server' або 'client'
         }
     }));
 };
@@ -205,6 +270,7 @@ document.addEventListener('DOMContentLoaded', init);
 | `toolbarStart` | `string` | `''` | HTML-рядок для лівої частини тулбара |
 | `downloadFilename` | `string` | `'export'` | Назва файлу без розширення |
 | `downloadFormat` | `'xlsx'\|'csv'` | `'xlsx'` | Формат файлу при завантаженні |
+| `paginationMode` | `'server'\|'client'` | `'server'` | Режим пагінації (див. [Режими роботи](#режими-роботи-таблиці)) |
 
 ---
 
@@ -249,13 +315,14 @@ document.addEventListener('DOMContentLoaded', init);
 ---
 
 ### Експорт
-Компонент завжди працює в client-режимі. При натисканні «Завантажити»:
 
-1. Робиться POST-запит на {requestUrl}-export
+Компонент підтримує експорт даних у формати XLSX та CSV. При натисканні кнопки «Завантажити»:
+
+1. Робиться POST-запит на `{requestUrl}-export`
 2. Сервер повертає JSON з даними
 3. Фронтенд генерує файл (xlsx або csv)
 
-####   Формат відповіді сервера:
+#### Формат відповіді сервера для експорту:
 
 ```json
 {
@@ -291,7 +358,9 @@ document.addEventListener('DOMContentLoaded', init);
 
 ```javascript
 {
-    name: 'id',    sortable: true,
+    name: 'id',
+    title: 'ID',
+    sortable: true,
     width: '80px',
 }
 ```
@@ -303,6 +372,7 @@ document.addEventListener('DOMContentLoaded', init);
 ```javascript
 {
     name: 'status',
+    title: 'Статус',
     sortable: true,
     bodyClass: 'text-center',
     headerClass: 'text-center',
@@ -317,7 +387,9 @@ document.addEventListener('DOMContentLoaded', init);
 
 ```javascript
 {
-    name: 'full_name',    sortable: true,
+    name: 'full_name',
+    title: 'ПІБ',
+    sortable: true,
     value: (row) => {
         return `<a href="/users/${row.id}" class="text-primary">${row.full_name}</a>`;
     }
@@ -327,6 +399,7 @@ document.addEventListener('DOMContentLoaded', init);
 ```javascript
 {
     name: 'is_active',
+    title: 'Статус',
     value: (row) => {
         return row.is_active
             ? '<span class="success">Активний</span>'
@@ -339,6 +412,7 @@ document.addEventListener('DOMContentLoaded', init);
 // Кнопки дій
 {
     name: 'actions',
+    title: 'Дії',
     bodyClass: 'actions-column',
     value: (row) => {
         return `
@@ -362,6 +436,7 @@ document.addEventListener('DOMContentLoaded', init);
 ```javascript
 {
     name: 'full_name',
+    title: 'ПІБ',
     type: 'computed',
     fields: ['last_name', 'first_name', 'middle_name'],
 }
@@ -371,7 +446,7 @@ document.addEventListener('DOMContentLoaded', init);
 // Адреса з кількох полів
 {
     name: 'address',
- 'Адреса',
+    title: 'Адреса',
     type: 'computed',
     fields: ['city', 'street', 'building'],
 }
@@ -386,6 +461,7 @@ document.addEventListener('DOMContentLoaded', init);
 ```javascript
 {
     name: 'created_at',
+    title: 'Дата створення',
     visible: false,
     sortable: true,
 }
@@ -398,6 +474,7 @@ document.addEventListener('DOMContentLoaded', init);
 ```javascript
 {
     name: 'edrpou',
+    title: 'ЄДРПОУ',
     width: '120px',
     sortable: true,
 }
@@ -411,21 +488,25 @@ document.addEventListener('DOMContentLoaded', init);
 const columns = [
     {
         name: 'id',
+        title: 'ID',
         sortable: true,
         width: '70px',
     },
     {
         name: 'full_name',
+        title: 'ПІБ',
         type: 'computed',
         fields: ['last_name', 'first_name', 'middle_name'],
     },
     {
         name: 'edrpou_code',
+        title: 'ЄДРПОУ',
         sortable: true,
         width: '120px',
     },
     {
         name: 'status',
+        title: 'Статус',
         value: (row) => {
             const map = {
                 active:   '<span class="success">Активний</span>',
@@ -437,11 +518,13 @@ const columns = [
     },
     {
         name: 'created_at',
+        title: 'Дата створення',
         sortable: true,
         visible: false,
     },
     {
         name: 'actions',
+        title: 'Дії',
         bodyClass: 'actions-column',
         value: (row) => `
             <a href="/parties/${row.id}" title="Переглянути">
@@ -465,11 +548,12 @@ const columns = [
 
 ### 1. `text` / `string` / `varchar` — текстовий рядок
 
-Використовується для пошуку по рядку. Запит відкладається на 500 мс після введення.
+Використовується для пошуку по рядку. Запит відкладається на 500 мс після введення (тільки в серверному режимі).
 
 ```javascript
 {
     name: 'name',
+    title: 'Назва',
     type: 'text',
     placeholder: 'Введіть назву...',
 }
@@ -478,6 +562,7 @@ const columns = [
 ```javascript
 {
     name: 'edrpou_code',
+    title: 'ЄДРПОУ',
     type: 'varchar',
 }
 ```
@@ -491,6 +576,7 @@ const columns = [
 ```javascript
 {
     name: 'year',
+    title: 'Рік',
     type: 'integer',
     placeholder: 'Введіть рік...',
 }
@@ -499,6 +585,7 @@ const columns = [
 ```javascript
 {
     name: 'members_count',
+    title: 'Кількість членів',
     type: 'integer',
 }
 ```
@@ -515,6 +602,7 @@ const columns = [
 ```javascript
 {
     name: 'status',
+    title: 'Статус',
     type: 'select',
     placeholder: 'Оберіть статус...',
     options: ['Активний', 'Неактивний', 'Заблокований'],
@@ -537,6 +625,7 @@ const columns = [
 ```javascript
 {
     name: 'regions',
+    title: 'Регіони',
     type: 'multiselect',
     placeholder: 'Оберіть регіони...',
     optionLabel: 'label',
@@ -559,7 +648,9 @@ const columns = [
 ```javascript
 // Простий multiselect зі рядковими значеннями
 {
-    name: 'categories',    type: 'multiselect',
+    name: 'categories',
+    title: 'Категорії',
+    type: 'multiselect',
     optionLabel: 'name',
     optionValue: 'id',
     options: [
@@ -579,7 +670,7 @@ const columns = [
 ```javascript
 {
     name: 'created_at',
- створення',
+    title: 'Дата створення',
     type: 'date',
     placeholder: 'РРРР-ММ-ДД',
 }
@@ -588,6 +679,7 @@ const columns = [
 ```javascript
 {
     name: 'birth_date',
+    title: 'Дата народження',
     type: 'date',
 }
 ```
@@ -606,6 +698,7 @@ const columns = [
 ```javascript
 {
     name: 'registration_date',
+    title: 'Дата реєстрації',
     type: 'date_range',
     placeholder: 'ДД.ММ.РРРР - ДД.ММ.РРРР',
 }
@@ -625,7 +718,7 @@ const columns = [
 ```javascript
 {
     name: 'report_year',
-
+    title: 'Рік звітності',
     type: 'year',
     placeholder: 'РРРР',
 }
@@ -645,6 +738,7 @@ const columns = [
 ```javascript
 {
     name: 'amount',
+    title: 'Сума',
     type: 'range',
     placeholderFrom: 'Від',
     placeholderTo: 'До',
@@ -654,6 +748,7 @@ const columns = [
 ```javascript
 {
     name: 'members_count',
+    title: 'Кількість членів',
     type: 'range',
     placeholderFrom: 'Мінімум',
     placeholderTo: 'Максимум',
@@ -677,6 +772,7 @@ const columns = [
 ```javascript
 {
     name: 'internal_code',
+    title: 'Внутрішній код',
     type: 'text',
     visible: false,   // прихований, але доступний через шестерню
 }
@@ -690,22 +786,26 @@ const columns = [
 const filters = [
     {
         name: 'name',
+        title: 'Назва',
         type: 'text',
         placeholder: 'Введіть назву...',
     },
     {
         name: 'edrpou_code',
+        title: 'ЄДРПОУ',
         type: 'varchar',
         placeholder: '12345678',
     },
     {
         name: 'status',
+        title: 'Статус',
         type: 'select',
         options: ['Зареєстрований', 'Ліквідований', 'В стадії ліквідації'],
         placeholder: 'Оберіть статус...',
     },
     {
         name: 'region_id',
+        title: 'Регіони',
         type: 'multiselect',
         optionLabel: 'label',
         optionValue: 'value',
@@ -718,33 +818,34 @@ const filters = [
     },
     {
         name: 'registration_date',
- 'Дата реєстрації',
+        title: 'Дата реєстрації',
         type: 'date_range',
     },
     {
         name: 'report_year',
- звітності',
+        title: 'Рік звітності',
         type: 'year',
     },
     {
         name: 'founded_date',
-
+        title: 'Дата заснування',
         type: 'date',
     },
     {
         name: 'members_count',
+        title: 'Кількість членів',
         type: 'range',
         placeholderFrom: 'Від',
         placeholderTo: 'До',
     },
     {
         name: 'employee_count',
- 'Кількість працівників',
+        title: 'Кількість працівників',
         type: 'integer',
     },
     {
         name: 'internal_note',
- позначка',
+        title: 'Внутрішня позначка',
         type: 'text',
         visible: false,
     },
@@ -755,7 +856,7 @@ const filters = [
 
 ## API сервера
 
-### Запит даних
+### Запит даних (серверний режим)
 
 **URL:** `POST {requestUrl}`
 
@@ -783,9 +884,23 @@ const filters = [
 }
 ```
 
----
+### Запит даних (клієнтський режим)
 
-### Відповідь даних
+**URL:** `POST {requestUrl}`
+
+**Тіло запиту:** (без `pager`)
+
+```json
+{
+  "order": {
+    "created_at": "desc"
+  }
+}
+```
+
+> **Важливо:** У клієнтському режимі сервер ігнорує `pager` (якщо він є) і повертає ВСІ дані.
+
+### Відповідь даних (обидва режими)
 
 ```json
 {
@@ -795,15 +910,7 @@ const filters = [
         "id": 1,
         "name": "Організація 1",
         "edrpou_code": "12345678",
-        "status": "Активний",
-        "created_at": "2024-01-15"
-      },
-      {
-        "id": 2,
-        "name": "Організація 2",
-        "edrpou_code": "87654321",
-        "status": "Ліквідований",
-        "created_at": "2023-08-20"
+        "status": "Активний
       }
     ],
     "count": 142
@@ -813,7 +920,7 @@ const filters = [
 
 | Поле | Тип | Опис |
 |---|---|---|
-| `results.list` | `object[]` | Масив рядків поточної сторінки |
+| `results.list` | `object[]` | Масив рядків (для серверного режиму — поточна сторінка, для клієнтського — всі дані) |
 | `results.count` | `number` | Загальна кількість записів (для пагінатора) |
 
 ---
@@ -889,7 +996,7 @@ const columns = [
     { name: 'created_at',    title: 'Дата реєстрації', sortable: true, visible: false },
     {
         name: 'actions',
- '',
+        title: 'Дії',
         bodyClass: 'actions-column',
         value: (row) => `<a href="/users/${row.id}/edit">Редагувати</a>`,
     },
@@ -898,8 +1005,8 @@ const columns = [
 const filters = [
     { name: 'search',       title: 'Пошук',        type: 'text',        placeholder: 'Назва або ЄДРПОУ...' },
     { name: 'status',       title: 'Статус',        type: 'select',      options: ['Активний', 'Неактивний'] },
-    { name: 'region_id', label: 'Київська', value: 1 }, { label: 'Львівська', value: 2 }] },
-    { name: 'created_date', title: 'Дата реєстр.', type: 'date_range' },
+    { name: 'region_id',    title: 'Регіони',       type: 'multiselect', optionLabel: 'label', optionValue: 'value', options: [{ label: 'Київська', value: 1 }, { label: 'Львівська', value: 2 }] },
+    { name: 'created_date', title: 'Дата реєстр.',  type: 'date_range' },
     { name: 'year',         title: 'Рік',           type: 'year' },
     { name: 'amount',       title: 'Сума',          type: 'range',       placeholderFrom: 'Від', placeholderTo: 'До' },
 ];
@@ -918,6 +1025,7 @@ const init = () => {
             scrollable:         true,
             downloadFilename:   'party_registry_export',
             downloadFormat:     'xlsx',
+            paginationMode:     'server', // або 'client'
             toolbarStart: `
                 <div class="flex gap-2">
                     <a href="/parties/create" class="p-button p-button-secondary p-button-sm">
@@ -1012,20 +1120,26 @@ const MyTheme = definePreset(Aura, {
 // Приклад використання
 {
     name: 'payment_status',
+    title: 'Статус оплати',
     value: (row) => {
         if (row.payment_status === 'paid')    return '<span class="success">Оплачено</span>';
         if (row.payment_status === 'failed')  return '<span class="failed">Помилка</span>';
         return row.payment_status;
     }
 }
-
-
 ```
+
 ---
+
 ## Важливі особливості та обмеження
 
-- Нижній скролбар завжди видимий.
-- Верхній скролбар керується через налаштування колонок.
-- value() функція використовує v-html — не вставляйте невідфільтрований користувацький контент.
-- Колонки типу computed завжди видимі.
+- **Нижній скролбар** завжди видимий (при необхідності).
+- **Верхній скролбар** керується через налаштування колонок (опція `scrollable`).
+- **`value()` функція** використовує `v-html` — не вставляйте невідфільтрований користувацький контент.
+- **Колонки типу `computed`** завжди видимі (не можна приховати через UI).
+- **Клієнтський режим** (`paginationMode: 'client'`) не підтримує фільтрацію на стороні сервера — всі фільтри застосовуються на клієнті.
+- **Серверний режим** (`paginationMode: 'server'`) виконує окремий запит при кожній зміні сторінки, сортуванні або фільтрі.
+- **Глобальний пошук** доступний **ТІЛЬКИ** в клієнтському режимі.
+- При зміні режиму роботи (`server` ↔ `client`) необхідно оновити сторінку або переініціалізувати компонент.
+- **Експорт даних** працює однаково в обох режимах, але в клієнтському режимі фільтри не передаються на сервер (експортуються всі дані).
 

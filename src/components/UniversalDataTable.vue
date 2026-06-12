@@ -88,7 +88,28 @@
       </template>
     </Toolbar>
 
+    <!-- ===== ПАНЕЛЬ ФІЛЬТРІВ ===== -->
     <div v-show="isFiltersPanelOpen" class="filters-panel mb-4">
+
+      <!-- Глобальний пошук — показується тільки в клієнтському режимі -->
+      <div v-if="isClientMode" class="global-search-wrapper mb-3">
+        <label class="global-search-label">Пошук по таблиці</label>
+        <div class="global-search-input-wrap">
+          <span v-html="searchIcon" class="global-search-icon"></span>
+          <InputText
+              v-model="globalSearch"
+              placeholder="Введіть для пошуку по всіх колонках..."
+              class="global-search-input"
+          />
+          <button
+              v-if="globalSearch"
+              class="global-search-clear"
+              @click="globalSearch = ''"
+              type="button"
+          >x</button>
+        </div>
+      </div>
+
       <div v-if="hasVisibleFilters">
         <div class="filters-grid mb-3">
           <div
@@ -227,7 +248,12 @@
           </Button>
         </div>
       </div>
-      <div v-else class="text-muted text-center py-2">
+
+      <!-- Якщо фільтри приховані, але є глобальний пошук — не показуємо повідомлення -->
+      <div v-else-if="!isClientMode" class="text-muted text-center py-2">
+        Всі фільтри приховані. Увімкніть потрібні через налаштування поруч із кнопкою "Фільтри".
+      </div>
+      <div v-else-if="isClientMode && !hasVisibleFilters" class="text-muted text-center py-2">
         Всі фільтри приховані. Увімкніть потрібні через налаштування поруч із кнопкою "Фільтри".
       </div>
     </div>
@@ -243,20 +269,22 @@
     </div>
 
     <div ref="dtWrapper" class="dt-responsive-wrapper">
+
+      <!-- ===== КЛІЄНТСЬКИЙ РЕЖИМ (paginationMode: 'client') ===== -->
       <DataTable
-          :value="items"
-          lazy
+          v-if="isClientMode"
+          :value="clientFilteredItems"
           paginator
-          :rows="lazyParams.rows"
-          :totalRecords="totalRecords"
+          :rows="clientRows"
           :loading="loading"
-          :first="dtFirstOffset"
-          @page="onPage"
-          @sort="onSort"
-          :sortField="lazyParams.sortField"
-          :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
+          :first="clientFirst"
+          @page="onClientPage"
+          @sort="onClientSort"
+          :sortField="clientSortField"
+          :sortOrder="clientSortOrder"
           removableSort
-          paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+          paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+
           :rowsPerPageOptions="effectiveRowsPerPageOptions"
           currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
       >
@@ -276,11 +304,9 @@
               <template v-if="typeof col.value === 'function'">
                 <span v-html="col.value(slotProps.data)"></span>
               </template>
-
               <template v-else-if="col.type === 'computed' && col.fields && Array.isArray(col.fields)">
                 {{ col.fields.map(f => slotProps.data[f]).filter(Boolean).join(' ') }}
               </template>
-
               <template v-else>
                 {{ slotProps.data[col.name] }}
               </template>
@@ -288,6 +314,53 @@
           </Column>
         </template>
       </DataTable>
+
+      <!-- ===== СЕРВЕРНИЙ РЕЖИМ (paginationMode: 'server' або за замовч.) ===== -->
+      <DataTable
+          v-else
+          :value="items"
+          lazy
+          paginator
+          :rows="lazyParams.rows"
+          :totalRecords="totalRecords"
+          :loading="loading"
+          :first="dtFirstOffset"
+          @page="onPage"
+          @sort="onSort"
+          :sortField="lazyParams.sortField"
+          :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
+          removableSort
+          paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+          :rowsPerPageOptions="effectiveRowsPerPageOptions"
+          currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
+      >
+        <template v-for="col in columnsState" :key="col.name || col.title">
+          <Column
+              v-if="col.visible"
+              :field="col.name"
+              :header="col.title"
+              :sortable="col.sortable || false"
+              :class="col.bodyClass || col.class || ''"
+              :headerClass="col.headerClass || ''"
+              :bodyClass="col.bodyClass || col.class || ''"
+              :footerClass="col.footerClass || ''"
+              :style="{ width: col.width || 'auto' }"
+          >
+            <template #body="slotProps">
+              <template v-if="typeof col.value === 'function'">
+                <span v-html="col.value(slotProps.data)"></span>
+              </template>
+              <template v-else-if="col.type === 'computed' && col.fields && Array.isArray(col.fields)">
+                {{ col.fields.map(f => slotProps.data[f]).filter(Boolean).join(' ') }}
+              </template>
+              <template v-else>
+                {{ slotProps.data[col.name] }}
+              </template>
+            </template>
+          </Column>
+        </template>
+      </DataTable>
+
     </div>
 
     <!-- Нижній кастомний скрол -->
@@ -322,6 +395,7 @@ import MultiSelect from 'primevue/multiselect';
 
 interface ColumnConfig {
   name: string;
+  title?: string;
   visible?: boolean;
   sortable?: boolean;
   width?: string;
@@ -332,14 +406,13 @@ interface ColumnConfig {
   headerClass?: string;
   bodyClass?: string;
   footerClass?: string;
-  attributes?: {
-    class?: string;
-  };
+  attributes?: { class?: string };
 }
 
 interface FilterConfig {
   name: string;
-  type: 'string' | 'text' | 'varchar' | 'integer' | 'select' | 'multiselect' | 'date' | 'date_range' | 'year' | 'range';  visible?: boolean;
+  type: 'string' | 'text' | 'varchar' | 'integer' | 'select' | 'multiselect' | 'date' | 'date_range' | 'year' | 'range';
+  visible?: boolean;
   options?: any[];
   optionLabel?: string;
   optionValue?: string;
@@ -367,8 +440,11 @@ interface ClientExportResponse {
   filename?: string;
 }
 
-// Підтримувані формати файлу при завантаженні
 type DownloadFormat = 'xlsx' | 'csv';
+
+// 'server' — lazy-режим (запити на кожну сторінку/фільтр/сортування)
+// 'client' — всі дані завантажуються один раз, далі пагінація/фільтрація/сортування на клієнті
+type PaginationMode = 'server' | 'client';
 
 interface TableConfig {
   requestUrl: string;
@@ -383,6 +459,7 @@ interface TableConfig {
   toolbarStart?: string;
   downloadFilename?: string;
   downloadFormat?: DownloadFormat;
+  paginationMode?: PaginationMode;
 }
 
 interface ApiResponse {
@@ -407,6 +484,7 @@ const props = defineProps<{
   toolbarStart?: string;
   downloadFilename?: string;
   downloadFormat?: DownloadFormat;
+  paginationMode?: PaginationMode;
 }>();
 
 // ====================== CONSTANTS (SVG) ======================
@@ -416,37 +494,50 @@ const filterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox=
 const downloadIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M30 21.25c-0.414 0-0.75 0.336-0.75 0.75v0 7.25h-26.5v-7.25c0-0.414-0.336-0.75-0.75-0.75s-0.75 0.336-0.75 0.75v0 8c0 0.414 0.336 0.75 0.75 0.75h28c0.414-0 0.75-0.336 0.75-0.75v0-8c-0-0.414-0.336-0.75-0.75-0.75v0zM15.47 24.531c0.026 0.026 0.065 0.017 0.093 0.038 0.052 0.040 0.088 0.098 0.15 0.124 0.085 0.035 0.184 0.056 0.287 0.057h0c0.207 0 0.394-0.084 0.53-0.219l5.001-5c0.136-0.136 0.22-0.324 0.22-0.531 0-0.415-0.336-0.751-0.751-0.751-0.207 0-0.395 0.084-0.531 0.22l-3.719 3.721v-20.189c0-0.414-0.336-0.75-0.75-0.75s-0.75 0.336-0.75 0.75v0 20.188l-3.72-3.72c-0.136-0.134-0.322-0.218-0.528-0.218-0.415 0-0.751 0.336-0.751 0.751 0 0.207 0.083 0.394 0.219 0.529l-0-0z"></path></svg>`;
 const cogIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29.18 13.92l-2.45-.41a8.91 8.91 0 00-.65-1.57l1.45-2.02a0.75 0.75 0 00-.08-.94l-2.12-2.12a0.75 0.75 0 00-.94-.08l-2.02 1.45a8.91 8.91 0 00-1.57-.65l-.41-2.45A0.75 0.75 0 0019.64 4h-3a0.75 0.75 0 00-.74.63l-.41 2.45a8.91 8.91 0 00-1.57.65L11.9 6.28a0.75 0.75 0 00-.94.08L8.84 8.48a0.75 0.75 0 00-.08.94l1.45 2.02a8.91 8.91 0 00-.65 1.57l-2.45.41A0.75 0.75 0 006.5 14.66v3a0.75 0.75 0 00.63.74l2.45 0.41c.15.55.37 1.08.65 1.57l-1.45 2.02a0.75 0.75 0 00.08.94l2.12 2.12a0.75 0.75 0 00.94.08l2.02-1.45c.49.28 1.02.5 1.57.65l.41 2.45a0.75 0.75 0 00.74.63h3a0.75 0.75 0 00.74-.63l.41-2.45c.55-.15 1.08-.37 1.57-.65l2.02 1.45a0.75 0.75 0 00.94-.08l2.12-2.12a0.75 0.75 0 00.08-.94l-1.45-2.02c.28-.49.5-1.02.65-1.57l2.45-.41a0.75 0.75 0 00.63-.74v-3a0.75 0.75 0 00-.63-.74zM17.84 21.5a5.5 5.5 0 115.5-5.5 5.5 5.5 0 01-5.5 5.5z"></path></svg>`;
 const resetFilterIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M28.71 5.29A1 1 0 0 0 28 5H4a1 1 0 0 0-.71 1.71L12 15.42V26a1 1 0 0 0 .45.83l4 2.67A1 1 0 0 0 18 28.67V15.42l6-6V8h2a1 1 0 0 0 0-2h-3.33M27.71 19.29a1 1 0 0 0-1.42 0L24 21.59l-2.29-2.3a1 1 0 0 0-1.42 1.42l2.3 2.29-2.3 2.29a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l2.29-2.3 2.29 2.3a1 1 0 0 0 1.42 0 1 1 0 0 0 0-1.42L25.41 23l2.3-2.29a1 1 0 0 0 0-1.42z"/></svg>`;
+const searchIcon = `<svg fill="currentColor" width="16px" height="16px" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M29 27.586l-7.552-7.552A11.018 11.018 0 1 0 3 13a11.018 11.018 0 0 0 17.034 9.448L27.586 29zM5 13a9 9 0 1 1 9 9 9.01 9.01 0 0 1-9-9z"/></svg>`;
 
 // ====================== COMPUTED ======================
 
 const externalConfig = ref<TableConfig | null>(null);
 
-const effectiveRequestUrl    = computed(() => externalConfig.value?.requestUrl    || props.requestUrl);
-const effectiveStorageKey    = computed(() => externalConfig.value?.storageKey    || props.storageKey);
-const effectiveColumns       = computed(() => externalConfig.value?.columns       || props.columnsConfig);
-const effectiveFilters       = computed(() => externalConfig.value?.filters       || props.filtersConfig  || []);
-const effectiveOrder         = computed(() => externalConfig.value?.order         || props.defaultOrder   || {});
-const effectiveShowDownload  = computed(() => externalConfig.value?.showDownload  ?? props.showDownload   ?? false);
-const effectiveFiltersExpanded = computed(() => externalConfig.value?.filtersExpanded ?? props.filtersExpanded ?? true);
+const effectiveRequestUrl         = computed(() => externalConfig.value?.requestUrl         || props.requestUrl);
+const effectiveStorageKey         = computed(() => externalConfig.value?.storageKey         || props.storageKey);
+const effectiveColumns            = computed(() => externalConfig.value?.columns            || props.columnsConfig);
+const effectiveFilters            = computed(() => externalConfig.value?.filters            || props.filtersConfig  || []);
+const effectiveOrder              = computed(() => externalConfig.value?.order              || props.defaultOrder   || {});
+const effectiveShowDownload       = computed(() => externalConfig.value?.showDownload       ?? props.showDownload   ?? false);
+const effectiveFiltersExpanded    = computed(() => externalConfig.value?.filtersExpanded    ?? props.filtersExpanded ?? true);
 const effectiveRowsPerPageOptions = computed(() => externalConfig.value?.rowsPerPageOptions || props.rowsPerPageOptions || [10, 25, 50]);
-const effectiveScrollable    = computed(() => externalConfig.value?.scrollable    ?? props.scrollable     ?? true);
-const effectiveToolbarStart  = computed(() => externalConfig.value?.toolbarStart  || props.toolbarStart   || '');
-const effectiveDownloadFilename = computed(() => externalConfig.value?.downloadFilename || props.downloadFilename || 'report');
+const effectiveScrollable         = computed(() => externalConfig.value?.scrollable         ?? props.scrollable     ?? true);
+const effectiveToolbarStart       = computed(() => externalConfig.value?.toolbarStart       || props.toolbarStart   || '');
+const effectiveDownloadFilename   = computed(() => externalConfig.value?.downloadFilename   || props.downloadFilename || 'report');
+const effectiveDownloadFormat     = computed<DownloadFormat>(() => externalConfig.value?.downloadFormat || props.downloadFormat || 'xlsx');
 
-// Формат файлу: 'xlsx' за замовчуванням, якщо не задано
-const effectiveDownloadFormat = computed<DownloadFormat>(() =>
-    externalConfig.value?.downloadFormat || props.downloadFormat || 'xlsx'
+// Режим пагінації: 'server' (за замовч.) або 'client'
+const effectivePaginationMode = computed<PaginationMode>(() =>
+    externalConfig.value?.paginationMode || props.paginationMode || 'server'
 );
+
+// Чи увімкнений клієнтський режим
+const isClientMode = computed(() => effectivePaginationMode.value === 'client');
 
 const dtFirstOffset = computed(() => (lazyParams.value.page - 1) * lazyParams.value.rows);
 const STORAGE_KEY   = computed(() => `udt_state_${effectiveStorageKey.value}`);
 
 // ====================== REACTIVE STATE ======================
 
-const items          = ref<any[]>([]);
-const totalRecords   = ref<number>(0);
-const loading        = ref<boolean>(true);
+const items           = ref<any[]>([]);  // всі дані (для client-mode — весь масив)
+const allClientItems  = ref<any[]>([]);  // незмінний оригінал для клієнтської фільтрації
+const totalRecords    = ref<number>(0);
+const loading         = ref<boolean>(true);
 const downloadLoading = ref<boolean>(false);
+
+// --- Клієнтський режим ---
+const globalSearch   = ref<string>('');   // рядок глобального пошуку
+const clientRows     = ref<number>(10);   // рядків на сторінці
+const clientFirst    = ref<number>(0);    // зміщення першого рядка
+const clientSortField = ref<string | null>(null);
+const clientSortOrder = ref<number>(1);   // 1 = asc, -1 = desc
 
 const columnsPopover = ref<InstanceType<typeof Popover> | null>(null);
 const filtersPopover = ref<InstanceType<typeof Popover> | null>(null);
@@ -472,21 +563,169 @@ let isSyncingTop    = false;
 let isSyncingBottom = false;
 let isSyncingTable  = false;
 
+// ====================== CLIENT-MODE: ФІЛЬТРАЦІЯ ======================
+
+/**
+ * Повертає текстове значення комірки для порівняння.
+ * Підтримує функцію value, computed-поля та звичайні поля.
+ */
+const getCellText = (row: any, col: ColumnConfig): string => {
+  let rawValue: string;
+
+  if (typeof col.value === 'function') {
+    const html = col.value(row);
+    // Якщо значення - це масив (як у вашому випадку з actions)
+    if (Array.isArray(html)) {
+      rawValue = html.join(' ');
+    } else {
+      rawValue = html;
+    }
+  } else if (col.type === 'computed' && Array.isArray(col.fields)) {
+    rawValue = col.fields.map(f => row[f] ?? '').join(' ');
+  } else {
+    rawValue = row[col.name] ?? '';
+  }
+
+  // Очищаємо HTML теги для пошуку
+  const div = document.createElement('div');
+  div.innerHTML = String(rawValue);
+  return (div.textContent || div.innerText || '').toLowerCase();
+};
+
+/**
+ * Застосовує клієнтські фільтри (панель фільтрів) до рядка.
+ * Логіка відповідає типам фільтрів: text, select, multiselect, range, integer, date, date_range, year.
+ */
+const applyClientFilters = (row: any): boolean => {
+  for (const f of filtersState.value) {
+    if (!f.visible) continue;
+    const val = activeFilters[f.name];
+
+    if (f.type === 'range') {
+      const rowVal = Number(row[f.name]);
+      if (val?.from !== null && val?.from !== undefined && rowVal < val.from) return false;
+      if (val?.to   !== null && val?.to   !== undefined && rowVal > val.to)   return false;
+      continue;
+    }
+
+    if (f.type === 'multiselect') {
+      // Якщо масив порожній або не вибрано жодного значення - пропускаємо фільтр
+      if (!Array.isArray(val) || val.length === 0) continue;
+
+      const optValue = f.optionValue || 'value';
+      const rowRaw = row[f.name];
+
+      // Перевіряємо, чи є значення рядка в масиві вибраних опцій
+      const match = val.some(selectedValue => {
+        // Якщо selectedValue - це об'єкт (наприклад { label: '...', value: '...' })
+        if (typeof selectedValue === 'object' && selectedValue !== null) {
+          return String(rowRaw) === String(selectedValue[optValue]);
+        }
+        // Якщо selectedValue - це примітив (рядок, число)
+        return String(rowRaw) === String(selectedValue);
+      });
+
+      if (!match) return false;
+      continue;
+    }
+
+    if (f.type === 'select') {
+      if (val === null || val === undefined || val === '') continue;
+      if (String(row[f.name]) !== String(val)) return false;
+      continue;
+    }
+
+    if (f.type === 'integer') {
+      // Пропускаємо, якщо значення null, undefined або пустий рядок
+      if (val === null || val === undefined || val === '') continue;
+      if (Number(row[f.name]) !== Number(val)) return false;
+      continue;
+    }
+
+    if (f.type === 'date') {
+      if (!(val instanceof Date) || isNaN(val.getTime())) continue;
+      const offset    = val.getTimezoneOffset();
+      const corrected = new Date(val.getTime() - offset * 60 * 1000);
+      const filterStr = corrected.toISOString().split('T')[0];
+      if (String(row[f.name]) !== filterStr) return false;
+      continue;
+    }
+
+    if (f.type === 'year') {
+      if (!(val instanceof Date) || isNaN(val.getTime())) continue;
+      if (String(row[f.name]) !== String(val.getFullYear())) return false;
+      continue;
+    }
+
+    if (f.type === 'date_range') {
+      if (!Array.isArray(val) || !val[0] || !val[1]) continue;
+      const [start, end] = val as [Date, Date];
+      const rowDate = new Date(row[f.name]);
+      if (isNaN(rowDate.getTime())) return false;
+      if (rowDate < start || rowDate > end) return false;
+      continue;
+    }
+
+    // text / string / varchar - очищаємо HTML для коректного пошуку
+    if (val === '' || val === null || val === undefined) continue;
+
+    // Отримуємо чисте значення без HTML
+    let cleanRowValue = row[f.name];
+    if (typeof cleanRowValue === 'string') {
+      cleanRowValue = cleanRowValue.replace(/<[^>]*>/g, '');
+    }
+
+    if (!String(cleanRowValue ?? '').toLowerCase().includes(String(val).toLowerCase())) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Фінальний масив рядків для клієнтської DataTable.
+ * Застосовує: глобальний пошук + фільтри панелі.
+ */
+const clientFilteredItems = computed<any[]>(() => {
+  let result = allClientItems.value;
+
+  // Глобальний пошук по всіх видимих колонках
+  const search = globalSearch.value.trim().toLowerCase();
+  if (search) {
+    result = result.filter(row =>
+        columnsState.value
+            .filter(c => c.visible && c.name !== 'actions')
+            .some(col => getCellText(row, col).includes(search))
+    );
+  }
+
+  // Фільтри панелі
+  result = result.filter(row => applyClientFilters(row));
+
+  return result;
+});
+
+// Скидати clientFirst при зміні фільтрів чи пошуку
+watch(clientFilteredItems, () => { clientFirst.value = 0; });
+
 // ====================== FILTER HANDLERS ======================
 
 const onIntegerFilterInput = (event: any, filterName: string) => {
   activeFilters[filterName] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
+  if (isClientMode.value) return; // реактивно, без debounce
   debounceFilter();
 };
 
 const onRangeFilterInput = (event: any, filterName: string, field: 'from' | 'to') => {
   if (!activeFilters[filterName]) activeFilters[filterName] = { from: null, to: null };
   activeFilters[filterName][field] = event.value !== undefined && event.value !== null ? Number(event.value) : null;
+  if (isClientMode.value) return;
   debounceFilter();
 };
 
 const onRangeFilterClear = (filterName: string, field: 'from' | 'to') => {
   if (activeFilters[filterName]) activeFilters[filterName][field] = null;
+  if (isClientMode.value) return;
   triggerFilterApply();
 };
 
@@ -524,7 +763,6 @@ const initState = () => {
   isFiltersPanelOpen.value = savedState?.isFiltersPanelOpen ?? effectiveFiltersExpanded.value;
   isScrollEnabled.value    = externalConfig.value?.scrollable ?? savedState?.isScrollEnabled ?? effectiveScrollable.value;
 
-  // Columns
   columnsState.value = effectiveColumns.value.map((col: ColumnConfig) => {
     if (col.type === 'computed') return { ...col, visible: true };
     const savedCol = savedState?.columns?.find((c: any) => c.name === col.name);
@@ -536,13 +774,11 @@ const initState = () => {
     };
   });
 
-  // Filters
   filtersState.value = effectiveFilters.value.map((f: FilterConfig) => {
     const savedFilter = savedState?.filtersVisibility?.find((sf: any) => sf.name === f.name);
     return { ...f, visible: savedFilter?.visible ?? (f.visible !== false) };
   });
 
-  // Active Filters
   Object.keys(activeFilters).forEach(key => delete activeFilters[key]);
   effectiveFilters.value.forEach((f: FilterConfig) => {
     const savedValue = savedState?.activeFilters?.[f.name];
@@ -565,6 +801,10 @@ const initState = () => {
     sortField: savedState?.lazyParams?.sortField || Object.keys(effectiveOrder.value)[0] || 'id',
     sortOrder: savedState?.lazyParams?.sortOrder || 'desc'
   };
+
+  // Відновлюємо clientRows з lazyParams
+  clientRows.value  = lazyParams.value.rows;
+  clientFirst.value = 0;
 
   nextTick(() => {
     isInitializing = false;
@@ -592,7 +832,7 @@ const saveStateToStorage = () => {
   localStorage.setItem(STORAGE_KEY.value, JSON.stringify({
     isFiltersPanelOpen: isFiltersPanelOpen.value,
     isScrollEnabled:    isScrollEnabled.value,
-    lazyParams:         { ...lazyParams.value },
+    lazyParams:         { ...lazyParams.value, rows: isClientMode.value ? clientRows.value : lazyParams.value.rows },
     columns:            columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
     filtersVisibility:  filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
     activeFilters:      cleanedActiveFilters
@@ -603,11 +843,9 @@ const saveStateToStorage = () => {
 
 const getCleanedFilters = () => {
   const cleaned: Record<string, any> = {};
-
   filtersState.value.forEach(f => {
     if (!f.visible) return;
     const val = activeFilters[f.name];
-
     if (f.type === 'date' && val instanceof Date) {
       if (!isNaN(val.getTime())) {
         const offset   = val.getTimezoneOffset();
@@ -628,32 +866,50 @@ const getCleanedFilters = () => {
       cleaned[f.name] = val;
     }
   });
-
   return cleaned;
 };
 
+/**
+ * loadData — для серверного режиму: робить POST з pager/order/filters.
+ * Для клієнтського режиму: робить POST БЕЗ pager (отримує всі дані одразу).
+ */
 const loadData = async () => {
   if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
   loading.value = true;
 
   try {
+    const body = isClientMode.value
+        // Клієнтський режим — не передаємо pager, сервер повертає всі дані
+        ? JSON.stringify({
+          order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
+        })
+        // Серверний режим — стандартний запит з pager + filters
+        : JSON.stringify({
+          pager:   { page: lazyParams.value.page, size: lazyParams.value.rows },
+          order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
+          filters: getCleanedFilters()
+        });
+
     const response = await fetch(effectiveRequestUrl.value!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body: JSON.stringify({
-        pager:   { page: lazyParams.value.page, size: lazyParams.value.rows },
-        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
-        filters: getCleanedFilters()
-      })
+      body
     });
 
     const data: ApiResponse = await response.json();
     if (data.results) {
-      items.value        = data.results.list  || [];
-      totalRecords.value = data.results.count || 0;
+      const list = data.results.list || [];
+      if (isClientMode.value) {
+        // Зберігаємо весь масив як оригінал — фільтрація реактивна на клієнті
+        allClientItems.value = list;
+        totalRecords.value   = list.length;
+      } else {
+        items.value          = list;
+        totalRecords.value   = data.results.count || 0;
+      }
       nextTick(() => updateScrollDimensions());
     }
   } catch (error) {
@@ -663,12 +919,22 @@ const loadData = async () => {
   }
 };
 
+// ====================== CLIENT-MODE: HANDLERS ПАГІНАЦІЇ/СОРТУВАННЯ ======================
+
+const onClientPage = (event: any) => {
+  clientRows.value  = event.rows;
+  clientFirst.value = event.first;
+  lazyParams.value.rows = event.rows; // синхронізуємо для збереження у storage
+  saveStateToStorage();
+};
+
+const onClientSort = (event: any) => {
+  clientSortField.value = event.sortField;
+  clientSortOrder.value = event.sortOrder;
+};
+
 // ====================== EXPORT ======================
 
-/**
- * Прибирає HTML-теги зі значення, якщо вони є.
- * Потрібно, щоб у клітинку файлу потрапив чистий текст.
- */
 const stripHtml = (value: any): string => {
   if (typeof value !== 'string') return String(value ?? '');
   const div = document.createElement('div');
@@ -676,9 +942,6 @@ const stripHtml = (value: any): string => {
   return div.textContent || div.innerText || '';
 };
 
-/**
- * Тригерує завантаження файлу у браузері через тимчасовий <a>.
- */
 const triggerDownload = (blob: Blob, filename: string): void => {
   const url = window.URL.createObjectURL(blob);
   const a   = document.createElement('a');
@@ -690,84 +953,46 @@ const triggerDownload = (blob: Blob, filename: string): void => {
   window.URL.revokeObjectURL(url);
 };
 
-/**
- * Генерує та завантажує XLSX-файл на клієнті.
- * Використовує SheetJS (xlsx).
- */
 const generateXlsx = (data: ClientExportResponse): void => {
   const { columns, rows, filename } = data;
-
   const headerRow = columns.map(col => col.header);
   const dataRows  = rows.map(row => columns.map(col => stripHtml(row[col.key])));
-
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
-
-  // Ширини колонок з конфігу сервера або 20 за замовчуванням
   ws['!cols'] = columns.map(col => ({ wch: col.width || 20 }));
-
   XLSX.utils.book_append_sheet(wb, ws, 'Звіт');
-
-  const outputName = filename || effectiveDownloadFilename.value;
-  XLSX.writeFile(wb, `${outputName}.xlsx`);
+  XLSX.writeFile(wb, `${filename || effectiveDownloadFilename.value}.xlsx`);
 };
 
-/**
- * Генерує та завантажує CSV-файл на клієнті.
- * Використовує SheetJS для перетворення даних у CSV-рядок,
- * а потім зберігає його як Blob з кодуванням UTF-8 + BOM
- * (BOM потрібен для коректного відкриття в Excel).
- */
 const generateCsv = (data: ClientExportResponse): void => {
   const { columns, rows, filename } = data;
-
   const headerRow = columns.map(col => col.header);
   const dataRows  = rows.map(row => columns.map(col => stripHtml(row[col.key])));
-
   const ws  = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
-
-  // sheet_to_csv повертає рядок з комами як роздільником
   const csv = XLSX.utils.sheet_to_csv(ws);
-
-  // UTF-8 BOM (\uFEFF) — щоб Excel правильно відкривав кирилицю
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-
-  const outputName = filename || effectiveDownloadFilename.value;
-  triggerDownload(blob, `${outputName}.csv`);
+  triggerDownload(blob, `${filename || effectiveDownloadFilename.value}.csv`);
 };
 
 const exportData = async (): Promise<void> => {
   downloadLoading.value = true;
-
   try {
-    const payload = {
-      filters: getCleanedFilters(),
-      order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
-    };
-
     const response = await fetch(`${effectiveRequestUrl.value}-export`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        filters: isClientMode.value ? {} : getCleanedFilters(),
+        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
+      })
     });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
     const data: ClientExportResponse = await response.json();
-
-    if (effectiveDownloadFormat.value === 'csv') {
-      generateCsv(data);
-    } else {
-      generateXlsx(data);
-    }
+    effectiveDownloadFormat.value === 'csv' ? generateCsv(data) : generateXlsx(data);
   } catch (error) {
     console.error('Помилка експорту:', error);
-    // Тут можна додати toast-повідомлення, якщо використовуєш PrimeVue Toast
   } finally {
     downloadLoading.value = false;
   }
@@ -777,17 +1002,13 @@ const exportData = async (): Promise<void> => {
 
 const updateScrollDimensions = () => {
   if (!isScrollEnabled.value || !dtWrapper.value) return;
-
   const innerTableContainer = dtWrapper.value.querySelector('.p-datatable-table-container') as HTMLElement;
   const tableEl             = dtWrapper.value.querySelector('.p-datatable-table') as HTMLElement;
-
   if (innerTableContainer && tableEl) {
-    tableScrollElement       = innerTableContainer;
-    tableInnerWidth.value    = tableEl.offsetWidth;
-
+    tableScrollElement    = innerTableContainer;
+    tableInnerWidth.value = tableEl.offsetWidth;
     tableScrollElement.removeEventListener('scroll', syncTableToScrollbars);
     tableScrollElement.addEventListener('scroll', syncTableToScrollbars);
-
     nextTick(() => {
       const scrollLeft = tableScrollElement!.scrollLeft;
       if (topScrollContainer.value)    topScrollContainer.value.scrollLeft    = scrollLeft;
@@ -851,10 +1072,11 @@ const onColumnVisibilityChange = () => {
 
 // ====================== OTHER HANDLERS ======================
 
-const toggleFiltersPanel    = () => { isFiltersPanelOpen.value = !isFiltersPanelOpen.value; saveStateToStorage(); };
-const toggleColumnsPopover  = (event: Event) => columnsPopover.value?.toggle(event);
-const toggleFiltersPopover  = (event: Event) => filtersPopover.value?.toggle(event);
+const toggleFiltersPanel   = () => { isFiltersPanelOpen.value = !isFiltersPanelOpen.value; saveStateToStorage(); };
+const toggleColumnsPopover = (event: Event) => columnsPopover.value?.toggle(event);
+const toggleFiltersPopover = (event: Event) => filtersPopover.value?.toggle(event);
 
+// Серверна пагінація
 const onPage = (event: any) => {
   lazyParams.value.page = event.page + 1;
   lazyParams.value.rows = event.rows;
@@ -869,19 +1091,49 @@ const onSort = (event: any) => {
   loadData();
 };
 
-const onFilterInput     = () => debounceFilter();
-const onFilterClear     = () => triggerFilterApply();
-const onFilterDateUpdate = () => triggerFilterApply();
+const onFilterInput      = () => { if (!isClientMode.value) debounceFilter(); };
+const onFilterClear      = () => { if (!isClientMode.value) triggerFilterApply(); };
+const onFilterDateUpdate = () => { if (!isClientMode.value) triggerFilterApply(); };
 
 const clearAllFilters = () => {
   if (filterTimeout) clearTimeout(filterTimeout);
+
+  // Скидаємо глобальний пошук
+  globalSearch.value = '';
+
+  // Скидаємо активні фільтри
   effectiveFilters.value.forEach(f => {
-    if (f.type === 'range')                              activeFilters[f.name] = { from: null, to: null };
-    else if (f.type === 'multiselect')                   activeFilters[f.name] = [];
-    else if (['date', 'date_range', 'year'].includes(f.type)) activeFilters[f.name] = null;
-    else                                                 activeFilters[f.name] = '';
+    if (f.type === 'range') {
+      activeFilters[f.name] = { from: null, to: null };
+    }
+    else if (f.type === 'multiselect') {
+      activeFilters[f.name] = [];
+    }
+    else if (f.type === 'select') {
+      activeFilters[f.name] = null;  // або '', але краще null
+    }
+    else if (f.type === 'integer') {
+      activeFilters[f.name] = null;  // ВАЖЛИВО: null, а не 0 або ''
+    }
+    else if (f.type === 'date' || f.type === 'year') {
+      activeFilters[f.name] = null;
+    }
+    else if (f.type === 'date_range') {
+      activeFilters[f.name] = [null, null];
+    }
+    else {
+      activeFilters[f.name] = '';  // для текстових полів
+    }
   });
-  triggerFilterApply();
+
+  // Для клієнтського режиму не потрібно викликати loadData
+  if (!isClientMode.value) {
+    triggerFilterApply();
+  } else {
+    // Для клієнтського режиму просто скидаємо сторінку
+    clientFirst.value = 0;
+    saveStateToStorage();
+  }
 };
 
 const triggerFilterApply = () => {
@@ -908,16 +1160,13 @@ onMounted(() => {
     loadData();
   });
 
-  if (window.datatableConfig) {
-    externalConfig.value = window.datatableConfig;
-    initState();
-    loadData();
-  }
 });
 
 onBeforeUnmount(() => destroyScrollSync());
 </script>
+
 <style scoped>
+ /* ====================== ЗАГАЛЬНІ УТИЛІТИ ====================== */
 .universal-dt-container { font-family: sans-serif; }
 .mb-4 { margin-bottom: 1.5rem; }
 .mb-3 { margin-bottom: 1rem; }
@@ -936,60 +1185,97 @@ onBeforeUnmount(() => destroyScrollSync());
 .cursor-pointer { cursor: pointer; }
 .select-none { user-select: none; }
 .font-bold { font-weight: bold; }
-.text-primary { color: #21cc51 !important; }
-.bg-light-gray { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 0.75rem; border-radius: 6px; }
 .text-center { text-align: center; }
-.text-muted { color: #6c757d; font-size: 14px; }
 .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-.max-h-popover { max-height: 300px; overflow-y: auto; }
-.custom-svg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.svg-icon-wrapper { display: inline-flex; align-items: center; justify-content: center; line-height: 1; color: #555555; transition: color 0.15s ease-in-out; }
+
+/* ====================== КОЛЬОРИ ====================== */
+.text-primary { color: #21cc51 !important; }
+.text-muted { color: #6c757d; font-size: 14px; }
+
+/* ====================== ТУЛБАР ====================== */
+.bg-light-gray {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 0.75rem;
+  border-radius: 6px;
+}
+
+/* ====================== SVG-КНОПКИ ====================== */
+.custom-svg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.svg-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: #555555;
+  transition: color 0.15s ease-in-out;
+}
+
 .p-button-warning .svg-icon-wrapper { color: #212529; }
 .p-button-warning:hover .svg-icon-wrapper { color: #000000; }
 .p-button-outlined:hover .svg-icon-wrapper { color: #3b82f6; }
 .p-button-secondary.p-button-outlined:hover .svg-icon-wrapper { color: #4b5563; }
-.border-left-0 { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 0 !important; }
-.p-segmented-button-group .p-button:first-child { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
-.filters-panel { background: #ffffff; border: 1px solid #dee2e6; padding: 20px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-.filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
-.filter-field { display: flex; flex-direction: column; }
-.filter-field label { font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #333; min-height: 30px;}
-.p-button-outlined.p-button-secondary:not(:disabled):hover { background: #e2e8f0; border: 1px solid #e2e8f0; color: #334155; }
 
-/* Верхній кастомний скрол */
-.top-scrollbar-container {
-  overflow-x: auto;
-  overflow-y: hidden;
-  margin-bottom: 4px;
-  height: 13px;
-  position: sticky;
-  top: 0;
-  left: 0;
-  width: 100%;
-  z-index: 1;
-  display: block;
+/* ====================== КНОПКИ (ПРИМЕВЮ OVERRIDES) ====================== */
+.p-button-outlined.p-button-secondary:not(:disabled):hover {
+  background: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  color: #334155;
 }
-.top-scrollbar-container::-webkit-scrollbar { height: 9px; }
-.top-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
-.top-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
-.top-scrollbar-container::-webkit-scrollbar-thumb:hover { background: #6c6b6b; }
-.top-scrollbar-filler { height: 1px; }
 
-/* Нижній кастомний скрол */
-.bottom-scrollbar-container {
-  overflow-x: auto;
-  overflow-y: hidden;
-  margin-top: 4px;
-  height: 13px;
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  z-index: 1;
-  display: block;
+/* ====================== СЕГМЕНТОВАНА ГРУПА КНОПОК ====================== */
+.border-left-0 {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 0 !important;
+}
+
+.p-segmented-button-group .p-button:first-child {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* ====================== ПОПОВЕР ====================== */
+.max-h-popover {
+  max-height: 600px !important;
+  overflow-y: auto;
+}
+
+/* ====================== ПАНЕЛЬ ФІЛЬТРІВ ====================== */
+.filters-panel {
   background: #ffffff;
+  border: 1px solid #dee2e6;
+  padding: 20px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-field label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #333;
+  min-height: 30px;
+}
+
+/* ====================== ФІЛЬТР ДІАПАЗОНУ (range) ====================== */
 .range-filter-wrapper {
   grid-column: span 2;
   min-width: 250px;
@@ -1018,36 +1304,133 @@ onBeforeUnmount(() => destroyScrollSync());
   align-self: center;
 }
 
-.max-h-popover {
-  max-height: 600px !important;
+/* ====================== ГЛОБАЛЬНИЙ ПОШУК ====================== */
+.global-search-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.gap-2 {
-  gap: unset !important;
+
+.global-search-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.global-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.global-search-icon {
+  position: absolute;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  color: #9ca3af;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.global-search-input {
+  width: 100%;
+  padding-left: 34px !important;
+  padding-right: 34px !important;
+}
+
+.global-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.global-search-clear:hover {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+/* ====================== ВЕРХНІЙ КАСТОМНИЙ СКРОЛБАР ====================== */
+.top-scrollbar-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 4px;
+  height: 13px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+  display: block;
+}
+
+.top-scrollbar-container::-webkit-scrollbar { height: 9px; }
+.top-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+.top-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
+.top-scrollbar-container::-webkit-scrollbar-thumb:hover { background: #6c6b6b; }
+
+.top-scrollbar-filler { height: 1px; }
+
+/* ====================== НИЖНІЙ КАСТОМНИЙ СКРОЛБАР ====================== */
+.bottom-scrollbar-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 4px;
+  height: 13px;
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+  display: block;
+  background: #ffffff;
 }
 
 .bottom-scrollbar-container::-webkit-scrollbar { height: 9px; }
 .bottom-scrollbar-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
 .bottom-scrollbar-container::-webkit-scrollbar-thumb { background: #8b8b8b; border-radius: 4px; }
 .bottom-scrollbar-container::-webkit-scrollbar-thumb:hover { background: #6c6b6b; }
+
 .bottom-scrollbar-filler { height: 1px; }
 
-.dt-responsive-wrapper { width: 100%; overflow: hidden; }
+/* ====================== ОБГОРТКА ТАБЛИЦІ ====================== */
+.dt-responsive-wrapper {
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ====================== DEEP: ТАБЛИЦЯ (PRIMEVUE OVERRIDES) ====================== */
+
+/* Ховаємо нативний горизонтальний скрол таблиці — використовуємо кастомний */
+:deep(.p-datatable-table-container)::-webkit-scrollbar { display: none; }
+:deep(.p-datatable-table-container) {
+  -ms-overflow-style: none; /* IE / Edge */
+  scrollbar-width: none;    /* Firefox */
+}
+
+/* Статуси у колонках */
 :deep(.success) { color: #0a570a; font-weight: 600; }
-:deep(.failed) { color: #bb0e4a; font-weight: 600; }
+:deep(.failed)  { color: #bb0e4a; font-weight: 600; }
+
+/* Колонка дій */
 :deep(.actions-column) { width: max-content; }
 :deep(.actions-column a svg) { fill: #244464; transition: fill 0.2s; margin-right: 5px; }
 :deep(.actions-column a svg:hover) { fill: #e8a51f; }
-:deep(.p-datatable-table-container)::-webkit-scrollbar {  display: none;}
-:deep(.p-datatable-table-container) {  -ms-overflow-style: none;  /* IE / Edge */  scrollbar-width: none;     /* Firefox */}
 
-/* Якщо bodyClass застосовується на td */
-:deep(.p-datatable-tbody td.text-center) {
-  text-align: center !important;
-}
-:deep(.p-datatable-tbody td.text-right) {
-  text-align: right !important;
-}
-:deep(.p-datatable-tbody td.text-left) {
-  text-align: left !important;
-}
+/* Вирівнювання тексту у комірках */
+:deep(.p-datatable-tbody td.text-center) { text-align: center !important; }
+:deep(.p-datatable-tbody td.text-right)  { text-align: right !important; }
+:deep(.p-datatable-tbody td.text-left)   { text-align: left !important; }
+
 </style>

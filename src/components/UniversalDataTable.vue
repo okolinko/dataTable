@@ -813,30 +813,45 @@ const initState = () => {
 };
 
 const saveStateToStorage = () => {
-  if (isInitializing || !effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
+  if (isInitializing || !effectiveStorageKey.value || effectiveStorageKey.value === 'undefined')
+    return;
 
   const cleanedActiveFilters: Record<string, any> = {};
+
   Object.keys(activeFilters).forEach(key => {
     const val = activeFilters[key];
+
     if (val instanceof Date) {
       cleanedActiveFilters[key] = val.toISOString();
-    } else if (Array.isArray(val)) {
-      cleanedActiveFilters[key] = val.map(d => d instanceof Date ? d.toISOString() : d);
-    } else if (val && typeof val === 'object' && 'from' in val && 'to' in val) {
-      cleanedActiveFilters[key] = { from: val.from, to: val.to };
-    } else {
+    }
+    else if (Array.isArray(val)) {
+      cleanedActiveFilters[key] = val.map(item =>
+          item instanceof Date ? item.toISOString() : item
+      );
+    }
+    else if (val && typeof val === 'object' && 'from' in val && 'to' in val) {
+      cleanedActiveFilters[key] = {
+        from: val.from,
+        to: val.to
+      };
+    }
+    else {
       cleanedActiveFilters[key] = val;
     }
   });
 
-  localStorage.setItem(STORAGE_KEY.value, JSON.stringify({
-    isFiltersPanelOpen: isFiltersPanelOpen.value,
-    isScrollEnabled:    isScrollEnabled.value,
-    lazyParams:         { ...lazyParams.value, rows: isClientMode.value ? clientRows.value : lazyParams.value.rows },
-    columns:            columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
-    filtersVisibility:  filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
-    activeFilters:      cleanedActiveFilters
-  }));
+  try {
+    localStorage.setItem(STORAGE_KEY.value, JSON.stringify({
+      isFiltersPanelOpen: isFiltersPanelOpen.value,
+      isScrollEnabled:    isScrollEnabled.value,
+      lazyParams:         { ...lazyParams.value },
+      columns:            columnsState.value.map(c => ({ name: c.name, visible: c.visible })),
+      filtersVisibility:  filtersState.value.map(f => ({ name: f.name, visible: f.visible })),
+      activeFilters:      cleanedActiveFilters
+    }));
+  } catch (e) {
+    console.error('Не вдалося зберегти стан:', e);
+  }
 };
 
 // ====================== FILTERS & DATA ======================
@@ -1095,44 +1110,42 @@ const onFilterInput      = () => { if (!isClientMode.value) debounceFilter(); };
 const onFilterClear      = () => { if (!isClientMode.value) triggerFilterApply(); };
 const onFilterDateUpdate = () => { if (!isClientMode.value) triggerFilterApply(); };
 
-const clearAllFilters = () => {
-  if (filterTimeout) clearTimeout(filterTimeout);
+const clearAllFilters = async () => {
+  if (filterTimeout) {
+    clearTimeout(filterTimeout);
+    filterTimeout = null;
+  }
 
   // Скидаємо глобальний пошук
   globalSearch.value = '';
 
-  // Скидаємо активні фільтри
-  effectiveFilters.value.forEach(f => {
+  // === Повне очищення активних фільтрів ===
+  effectiveFilters.value.forEach((f: FilterConfig) => {
     if (f.type === 'range') {
       activeFilters[f.name] = { from: null, to: null };
     }
     else if (f.type === 'multiselect') {
       activeFilters[f.name] = [];
     }
-    else if (f.type === 'select') {
-      activeFilters[f.name] = null;  // або '', але краще null
-    }
-    else if (f.type === 'integer') {
-      activeFilters[f.name] = null;  // ВАЖЛИВО: null, а не 0 або ''
-    }
-    else if (f.type === 'date' || f.type === 'year') {
-      activeFilters[f.name] = null;
-    }
     else if (f.type === 'date_range') {
       activeFilters[f.name] = [null, null];
     }
     else {
-      activeFilters[f.name] = '';  // для текстових полів
+      // date, year, integer, select, text і т.д.
+      activeFilters[f.name] = null;
     }
   });
 
-  // Для клієнтського режиму не потрібно викликати loadData
+  // Примусово скидаємо сторінку
+  lazyParams.value.page = 1;
+  clientFirst.value = 0;
+
+  await nextTick();
+
+  saveStateToStorage();
+
   if (!isClientMode.value) {
-    triggerFilterApply();
-  } else {
-    // Для клієнтського режиму просто скидаємо сторінку
-    clientFirst.value = 0;
-    saveStateToStorage();
+    await loadData();
   }
 };
 

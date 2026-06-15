@@ -462,6 +462,7 @@ interface TableConfig {
   downloadFilename?: string;
   downloadFormat?: DownloadFormat;
   paginationMode?: PaginationMode;
+  requestParams?: Record<string, any>;
 }
 
 interface ApiResponse {
@@ -488,6 +489,7 @@ const props = defineProps<{
   downloadFilename?: string;
   downloadFormat?: DownloadFormat;
   paginationMode?: PaginationMode;
+  requestParams?: Record<string, any>;
 }>();
 
 // ====================== CONSTANTS (SVG) ======================
@@ -523,6 +525,11 @@ const effectiveShowColumnsButton = computed(() =>
 const effectivePaginationMode = computed<PaginationMode>(() =>
     externalConfig.value?.paginationMode || props.paginationMode || 'server'
 );
+
+const effectiveRequestParams = computed<Record<string, any>>(() => {
+  const params = externalConfig.value?.requestParams || props.requestParams || {};
+  return params;
+});
 
 // Чи увімкнений клієнтський режим
 const isClientMode = computed(() => effectivePaginationMode.value === 'client');
@@ -983,41 +990,44 @@ const getCleanedFilters = () => {
  * Для клієнтського режиму: робить POST БЕЗ pager (отримує всі дані одразу).
  */
 const loadData = async () => {
-  if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
+  if (!effectiveRequestUrl.value) return;
   loading.value = true;
 
   try {
-    const body = isClientMode.value
-        // Клієнтський режим — не передаємо pager, сервер повертає всі дані
-        ? JSON.stringify({
-          order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
-        })
-        // Серверний режим — стандартний запит з pager + filters
-        : JSON.stringify({
-          pager:   { page: lazyParams.value.page, size: lazyParams.value.rows },
-          order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
-          filters: getCleanedFilters()
-        });
+    const cleanedFilters = getCleanedFilters();
+    const requestParams = { ...effectiveRequestParams.value };
+    const mergedFilters = { ...requestParams, ...cleanedFilters };
+    const requestBody: any = {
+      order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
+    };
+    if (isClientMode.value) {
+      requestBody.filters = mergedFilters;
+    } else {
+      requestBody.pager = {
+        page: lazyParams.value.page,
+        size: lazyParams.value.rows
+      };
+      requestBody.filters = mergedFilters;
+    }
 
-    const response = await fetch(effectiveRequestUrl.value!, {
+    const response = await fetch(effectiveRequestUrl.value, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body
+      body: JSON.stringify(requestBody)
     });
 
     const data: ApiResponse = await response.json();
     if (data.results) {
       const list = data.results.list || [];
       if (isClientMode.value) {
-        // Зберігаємо весь масив як оригінал — фільтрація реактивна на клієнті
         allClientItems.value = list;
-        totalRecords.value   = list.length;
+        totalRecords.value = list.length;
       } else {
-        items.value          = list;
-        totalRecords.value   = data.results.count || 0;
+        items.value = list;
+        totalRecords.value = data.results.count || 0;
       }
       nextTick(() => updateScrollDimensions());
     }
@@ -1313,12 +1323,22 @@ const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible)
 const showDownloadBtn   = computed(() => effectiveShowDownload.value);
 
 onMounted(() => {
+  const handleConfig = (config: any) => {
+    externalConfig.value = config ? { ...config } : null;
+
+    nextTick(() => {
+      initState();
+      loadData();
+    });
+  };
+
   document.addEventListener('datatable:setConfig', (e: any) => {
-    externalConfig.value = e.detail;
-    initState();
-    loadData();
+    handleConfig(e.detail);
   });
 
+  if (window.datatableConfig) {
+    handleConfig(window.datatableConfig);
+  }
 });
 
 onBeforeUnmount(() => destroyScrollSync());

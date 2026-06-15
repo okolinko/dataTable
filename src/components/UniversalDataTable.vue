@@ -1098,6 +1098,10 @@ const generateCsv = (data: ClientExportResponse): void => {
 const exportData = async (): Promise<void> => {
   downloadLoading.value = true;
   try {
+    const cleanedFilters = getCleanedFilters();
+    const requestParams = { ...effectiveRequestParams.value };
+    // Об'єднуємо requestParams + cleanedFilters
+    const mergedFilters = { ...requestParams, ...cleanedFilters };
     const response = await fetch(`${effectiveRequestUrl.value}-export`, {
       method: 'POST',
       headers: {
@@ -1105,13 +1109,21 @@ const exportData = async (): Promise<void> => {
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
       body: JSON.stringify({
-        filters: isClientMode.value ? {} : getCleanedFilters(),
-        order:   { [lazyParams.value.sortField]: lazyParams.value.sortOrder }
+        filters: mergedFilters,                    // ← Тут головне виправлення
+        order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
       })
     });
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
     const data: ClientExportResponse = await response.json();
-    effectiveDownloadFormat.value === 'csv' ? generateCsv(data) : generateXlsx(data);
+    if (effectiveDownloadFormat.value === 'csv') {
+      generateCsv(data);
+    } else {
+      generateXlsx(data);
+    }
   } catch (error) {
     console.error('Помилка експорту:', error);
   } finally {

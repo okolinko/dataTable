@@ -114,11 +114,16 @@
       <div v-if="hasVisibleFilters">
         <div class="filters-grid mb-3">
           <div
-              v-for="filter in filtersState.filter(f => f.visible)"
+              v-for="filter in effectiveFilters"
               :key="filter.name"
               class="filter-field"
-              :class="{ 'range-filter-wrapper': filter.type === 'range' }"
+              :class="{
+                'filter-col-span-2': filter.colSpan === 2,
+                'filter-col-span-3': filter.colSpan === 3,
+                'range-filter-wrapper': filter.type === 'range'
+              }"
           >
+                 
             <label :for="'field-' + filter.name">{{ filter.title }}</label>
 
             <Select
@@ -1822,7 +1827,7 @@ onBeforeUnmount(() => destroyScrollSync());
 .applied-filters-right {
   flex-shrink: 0;
   margin-left: auto;
-  padding-top: 2px; 
+  padding-top: 2px;
 }
 
 
@@ -1831,5 +1836,24 @@ onBeforeUnmount(() => destroyScrollSync());
     flex-direction: column;
     align-items: flex-start;
   }
+}
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* Кастомні ширини */
+.filter-col-span-2 {
+  grid-column: span 2;
+}
+
+.filter-col-span-3 {
+  grid-column: span 3;
+}
+
+/* Якщо потрібно ще більше контролю */
+.filter-field {
+  min-width: 0;
 }
 </style>

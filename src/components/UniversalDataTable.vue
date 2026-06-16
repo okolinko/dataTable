@@ -990,7 +990,14 @@ const getCleanedFilters = () => {
  * Для клієнтського режиму: робить POST БЕЗ pager (отримує всі дані одразу).
  */
 const loadData = async () => {
-  if (!effectiveRequestUrl.value) return;
+  // Захист від раннього виклику
+  if (!externalConfig.value || !effectiveRequestUrl.value) {
+    console.log('⏳ loadData skipped — config not ready yet');
+    return;
+  }
+
+  if (!effectiveStorageKey.value || effectiveStorageKey.value === 'undefined') return;
+
   loading.value = true;
 
   try {
@@ -1030,6 +1037,9 @@ const loadData = async () => {
         totalRecords.value = data.results.count || 0;
       }
       nextTick(() => updateScrollDimensions());
+      document.dispatchEvent(new CustomEvent('datatable:dataLoaded', {
+        detail: data
+      }));
     }
   } catch (error) {
     console.error('Помилка завантаження даних:', error);
@@ -1335,8 +1345,11 @@ const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible)
 const showDownloadBtn   = computed(() => effectiveShowDownload.value);
 
 onMounted(() => {
+  let isConfigReady = false;
+
   const handleConfig = (config: any) => {
     externalConfig.value = config ? { ...config } : null;
+    isConfigReady = true;
 
     nextTick(() => {
       initState();

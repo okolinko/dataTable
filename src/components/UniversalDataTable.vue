@@ -239,15 +239,8 @@
           </div>
         </div>
 
-        <div class="flex justify-content-end border-top-1 surface-border pt-3">
-          <Button
-              class="p-button-outlined p-button-secondary p-button-sm"
-              @click="clearAllFilters"
-          >
-            <span v-html="resetFilterIcon" class="svg-icon-wrapper"></span>
-            <span class="p-button-label">Скинути всі фільтри</span>
-          </Button>
-        </div>
+
+
       </div>
 
       <!-- Якщо фільтри приховані, але є глобальний пошук — не показуємо повідомлення -->
@@ -256,6 +249,42 @@
       </div>
       <div v-else-if="isClientMode && !hasVisibleFilters" class="text-muted text-center py-2">
         Всі фільтри приховані. Увімкніть потрібні через налаштування поруч із кнопкою "Фільтри".
+      </div>
+    </div>
+
+    <!-- ===== БЛОК ЗАСТОСОВАНИХ ФІЛЬТРІВ ===== -->
+    <div v-if="hasActiveFilters" class="applied-filters-bar">
+      <div class="applied-filters-content">
+
+        <!-- Ліва частина: чіпи -->
+        <div class="applied-filters-left">
+          <span class="applied-filters-label">Застосовані фільтри:</span>
+
+          <span
+              v-for="(filter, name) in activeFilterChips"
+              :key="name"
+              class="applied-filter-chip"
+          >
+            <strong>{{ filter.title }}:</strong>
+            {{ filter.value }}
+            <span
+                class="chip-remove"
+                @click.stop="removeSingleFilter(name)"
+            >×</span>
+          </span>
+        </div>
+
+        <!-- Права частина: кнопка -->
+        <div class="applied-filters-right">
+          <Button
+              class="p-button-outlined p-button-secondary p-button-sm"
+              @click="clearAllFilters"
+          >
+            <span v-html="resetFilterIcon" class="svg-icon-wrapper me-1"></span>
+            Скинути всі
+          </Button>
+        </div>
+
       </div>
     </div>
 
@@ -721,7 +750,65 @@ const applyClientFilters = (row: any): boolean => {
   }
   return true;
 };
+// === ЧИПИ ЗАСТОСОВАНИХ ФІЛЬТРІВ ===
+const activeFilterChips = computed(() => {
+  const chips: Record<string, { title: string; value: string }> = {};
 
+  filtersState.value.forEach(f => {
+    if (!f.visible) return;
+    const val = activeFilters[f.name];
+    if (val === null || val === undefined || val === '' ||
+        (Array.isArray(val) && val.length === 0)) return;
+
+    let displayValue = '';
+
+    if (f.type === 'date_range' && Array.isArray(val)) {
+      const [start, end] = val;
+      if (start && end) {
+        displayValue = `${formatDateToLocalString(start)} — ${formatDateToLocalString(end)}`;
+      }
+    }
+    else if (f.type === 'range' && val?.from !== null && val?.to !== null) {
+      displayValue = `${val.from} — ${val.to}`;
+    }
+    else if (Array.isArray(val)) {
+      displayValue = val.join(', ');
+    }
+    else {
+      displayValue = String(val);
+    }
+
+    if (displayValue) {
+      chips[f.name] = {
+        title: f.title,
+        value: displayValue
+      };
+    }
+  });
+
+  return chips;
+});
+
+const hasActiveFilters = computed(() => Object.keys(activeFilterChips.value).length > 0);
+
+const removeSingleFilter = (filterName: string) => {
+  const filter = filtersState.value.find(f => f.name === filterName);
+  if (!filter) return;
+
+  if (filter.type === 'date_range') {
+    activeFilters[filterName] = undefined;
+  } else if (filter.type === 'range') {
+    activeFilters[filterName] = { from: null, to: null };
+  } else if (filter.type === 'multiselect') {
+    activeFilters[filterName] = [];
+  } else {
+    activeFilters[filterName] = '';
+  }
+
+  if (!isClientMode.value) {
+    triggerFilterApply();
+  }
+};
 /**
  * Фінальний масив рядків для клієнтської DataTable.
  * Застосовує: глобальний пошук + фільтри панелі.
@@ -1677,4 +1764,72 @@ onBeforeUnmount(() => destroyScrollSync());
   text-align: center !important;
 }
 
+.applied-filters-bar {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.applied-filters-content {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 12px;
+  width: 100%;
+}
+
+.applied-filters-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 auto;
+}
+
+.applied-filters-label {
+  font-weight: 600;
+  color: #6c757d;
+  white-space: nowrap;
+  margin-right: 4px;
+  padding-top: 2px; /* невелике коригування */
+}
+
+.applied-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+
+.chip-remove {
+  font-size: 1.35em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  padding: 0 4px;
+}
+
+.chip-remove:hover {
+  opacity: 1;
+}
+
+.applied-filters-right {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-top: 2px; 
+}
+
+
+@media (max-width: 768px) {
+  .applied-filters-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 </style>

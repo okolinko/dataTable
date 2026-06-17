@@ -114,16 +114,16 @@
       <div v-if="hasVisibleFilters">
         <div class="filters-grid mb-3">
           <div
-              v-for="filter in effectiveFilters"
+              v-for="filter in filtersState.filter(f => f.visible)"
               :key="filter.name"
               class="filter-field"
               :class="{
-                'filter-col-span-2': filter.colSpan === 2,
-                'filter-col-span-3': filter.colSpan === 3,
-                'range-filter-wrapper': filter.type === 'range'
-              }"
+          'filter-col-span-2': filter.colSpan === 2,
+          'filter-col-span-3': filter.colSpan === 3,
+          'range-filter-wrapper': filter.type === 'range'
+        }"
           >
-                 
+
             <label :for="'field-' + filter.name">{{ filter.title }}</label>
 
             <Select

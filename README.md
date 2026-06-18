@@ -314,7 +314,8 @@ document.addEventListener('DOMContentLoaded', init);
 | `placeholderFrom` | `string` | Ні | Підказка для поля "від" (для `range`) |
 | `placeholderTo` | `string` | Ні | Підказка для поля "до" (для `range`) |
 
----
+### Додаткові налаштування фільтрів
+* Можна задати параметр "inToolbar: true" і тоді фільтр перенесеться в "toolbarStart" для такого фільтра можна задати параметр "defaultValue: 'VALUE'" і буде обране значення за замовчуванням
 
 ### Експорт
 

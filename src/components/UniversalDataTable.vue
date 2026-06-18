@@ -4,6 +4,20 @@
     <Toolbar class="mb-4 bg-light-gray">
       <template #start>
         <div v-if="effectiveToolbarStart" v-html="effectiveToolbarStart"></div>
+        <!-- Фільтри з inToolbar: true -->
+        <div v-for="filter in toolbarFilters" :key="filter.name" class="inline-toolbar-filter mr-4">
+          <label :for="'toolbar-' + filter.name" class="text-sm text-muted mr-2">{{ filter.title }}:</label>
+          <Select
+              :inputId="'toolbar-' + filter.name"
+              v-model="activeFilters[filter.name]"
+              :options="filter.options || []"
+              :optionLabel="filter.optionLabel || 'label'"
+              :optionValue="filter.optionValue || 'value'"
+              @change="onFilterClear"
+              class="toolbar-select"
+              :style="{ minWidth: filter.minWidth || '380px' }"
+          />
+        </div>
       </template>
       <template #end>
         <div class="flex gap-2 align-items-center">
@@ -37,14 +51,20 @@
 
           <Popover ref="filtersPopover">
             <div class="flex flex-column gap-2 p-1 max-h-popover">
-              <div v-for="filter in filtersState" :key="filter.name" class="flex align-items-center m-2">
+              <div
+                  v-for="filter in filtersState.filter(f => !f.inToolbar)"
+                  :key="filter.name"
+                  class="flex align-items-center m-2"
+              >
                 <Checkbox
                     v-model="filter.visible"
                     :binary="true"
                     :inputId="'filter-pop-' + filter.name"
                     @change="saveStateToStorage"
                 />
-                <label :for="'filter-pop-' + filter.name" class="ml-2 cursor-pointer select-none">{{ filter.title }}</label>
+                <label :for="'filter-pop-' + filter.name" class="ml-2 cursor-pointer select-none">
+                  {{ filter.title }}
+                </label>
               </div>
             </div>
           </Popover>
@@ -114,7 +134,7 @@
       <div v-if="hasVisibleFilters">
         <div class="filters-grid mb-3">
           <div
-              v-for="filter in filtersState.filter(f => f.visible)"
+              v-for="filter in filtersState.filter(f => f.visible && !f.inToolbar)"
               :key="filter.name"
               class="filter-field"
               :class="{
@@ -571,6 +591,9 @@ const isClientMode = computed(() => effectivePaginationMode.value === 'client');
 const dtFirstOffset = computed(() => (lazyParams.value.page - 1) * lazyParams.value.rows);
 const STORAGE_KEY   = computed(() => `udt_state_${effectiveStorageKey.value}`);
 
+const toolbarFilters = computed(() => {
+  return filtersState.value.filter(f => f.inToolbar === true);
+});
 // ====================== REACTIVE STATE ======================
 
 const items           = ref<any[]>([]);  // всі дані (для client-mode — весь масив)
@@ -927,7 +950,10 @@ const initState = () => {
 
   filtersState.value = effectiveFilters.value.map((f: FilterConfig) => {
     const savedFilter = savedState?.filtersVisibility?.find((sf: any) => sf.name === f.name);
-    return { ...f, visible: savedFilter?.visible ?? (f.visible !== false) };
+    return {
+      ...f,
+      visible: f.inToolbar ? true : (savedFilter?.visible ?? (f.visible !== false))
+    };
   });
 
   Object.keys(activeFilters).forEach(key => delete activeFilters[key]);
@@ -960,6 +986,16 @@ const initState = () => {
     }
     else {
       activeFilters[f.name] = savedValue !== undefined ? savedValue : '';
+    }
+
+
+    if (f.inToolbar === true &&
+        f.defaultValue !== undefined &&
+        (activeFilters[f.name] === '' ||
+            activeFilters[f.name] === null ||
+            activeFilters[f.name] === undefined)) {
+
+      activeFilters[f.name] = f.defaultValue;
     }
   });
 
@@ -1855,5 +1891,15 @@ onBeforeUnmount(() => destroyScrollSync());
 /* Якщо потрібно ще більше контролю */
 .filter-field {
   min-width: 0;
+}
+
+.inline-toolbar-filter {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.toolbar-select {
+  min-width: 380px;
 }
 </style>

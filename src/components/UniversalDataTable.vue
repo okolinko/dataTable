@@ -1492,6 +1492,25 @@ onMounted(() => {
   if (window.datatableConfig) {
     handleConfig(window.datatableConfig);
   }
+  document.addEventListener('datatable:setFilter', (e: any) => {
+    const { name, value } = e.detail ?? {};
+    if (!name || value === undefined) return;
+
+    // Знаходимо конфіг фільтру щоб знати його тип
+    const filterConfig = filtersState.value.find(f => f.name === name);
+
+    if (filterConfig?.type === 'date_range' && Array.isArray(value)) {
+      // value вже масив Date об'єктів — встановлюємо напряму
+      activeFilters[name] = value;
+    } else {
+      activeFilters[name] = value;
+    }
+
+    // Запускаємо перезапит для серверного режиму
+    if (!isClientMode.value) {
+      triggerFilterApply();
+    }
+  });
 });
 
 onBeforeUnmount(() => destroyScrollSync());

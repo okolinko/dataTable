@@ -212,7 +212,7 @@
 
             <DatePicker
                 v-else-if="filter.type === 'date_range'"
-                :key="'date-range-' + filter.name + '-' + (activeFilters[filter.name] ? activeFilters[filter.name].map(d => d?.getTime()).join('-') : 'empty')"
+                :key="'date-range-' + filter.name"
                 :inputId="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
                 selectionMode="range"
@@ -220,8 +220,9 @@
                 showIcon
                 iconDisplay="input"
                 showClear
-                :manualInput="false"
-                @date-select="onFilterDateUpdate"
+                :manualInput="true"
+                :hideOnRangeSelection="false"
+                @update:modelValue="onDateRangeUpdate(filter.name, $event)"
                 @clear="onFilterClear"
                 :placeholder="filter.placeholder || 'ДД.ММ.РРРР - ДД.ММ.РРРР'"
             />
@@ -259,6 +260,7 @@
                 :id="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
                 @input="(event) => onTextFilterInput(event, filter.name)"
+                @change="(event) => onTextFilterInput(event, filter.name)"
                 :placeholder="filter.placeholder || 'Введіть значення...'"
             />
           </div>
@@ -337,9 +339,7 @@
           @sort="onClientSort"
           :sortField="clientSortField"
           :sortOrder="clientSortOrder"
-          removableSort
           paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
-
           :rowsPerPageOptions="effectiveRowsPerPageOptions"
           currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
       >
@@ -384,7 +384,6 @@
           @sort="onSort"
           :sortField="lazyParams.sortField"
           :sortOrder="lazyParams.sortOrder === 'desc' ? -1 : 1"
-          removableSort
           paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
           :rowsPerPageOptions="effectiveRowsPerPageOptions"
           currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
@@ -796,11 +795,27 @@ const activeFilterChips = computed(() => {
         displayValue = `${formatDateToLocalString(start)} — ${formatDateToLocalString(end)}`;
       }
     }
-    else if (f.type === 'range' && val?.from !== null && val?.to !== null) {
-      displayValue = `${val.from} — ${val.to}`;
+    else if (f.type === 'year' && val instanceof Date && !isNaN(val.getTime())) {
+      displayValue = String(val.getFullYear());
+    }
+    else if (f.type === 'date' && val instanceof Date && !isNaN(val.getTime())) {
+      displayValue = formatDateToLocalString(val);
+    }
+    else if (f.type === 'range') {
+      if (val?.from !== null && val?.from !== undefined &&
+          val?.to   !== null && val?.to   !== undefined) {
+        displayValue = `${val.from} — ${val.to}`;
+      } else if (val?.from !== null && val?.from !== undefined) {
+        displayValue = `від ${val.from}`;
+      } else if (val?.to !== null && val?.to !== undefined) {
+        displayValue = `до ${val.to}`;
+      }
     }
     else if (Array.isArray(val)) {
       displayValue = val.join(', ');
+    }
+    else if (val instanceof Date) {
+      displayValue = formatDateToLocalString(val);
     }
     else {
       displayValue = String(val);
@@ -808,7 +823,6 @@ const activeFilterChips = computed(() => {
 
     if (displayValue) {
       chips[f.name] = {
-        title: f.title,
         value: displayValue
       };
     }
@@ -816,6 +830,7 @@ const activeFilterChips = computed(() => {
 
   return chips;
 });
+
 
 const hasActiveFilters = computed(() => Object.keys(activeFilterChips.value).length > 0);
 
@@ -925,6 +940,22 @@ const formatDateToLocalString = (date: Date | null): string => {
   const year  = date.getFullYear();
 
   return `${day}.${month}.${year}`;
+};
+
+const onDateRangeUpdate = (filterName: string, value: any) => {
+  if (!Array.isArray(value)) {
+    activeFilters[filterName] = value;
+    return;
+  }
+
+  activeFilters[filterName] = value;
+
+  const [start, end] = value;
+  if (start && end) {
+    if (!isClientMode.value) {
+      triggerFilterApply();
+    }
+  }
 };
 
 const initState = () => {
@@ -1186,8 +1217,13 @@ const onClientPage = (event: any) => {
 };
 
 const onClientSort = (event: any) => {
+  if (!event.sortField) return;
   clientSortField.value = event.sortField;
-  clientSortOrder.value = event.sortOrder;
+  if (clientSortField.value === event.sortField && event.sortOrder === null) {
+    clientSortOrder.value = clientSortOrder.value === 1 ? -1 : 1;
+  } else {
+    clientSortOrder.value = event.sortOrder ?? 1;
+  }
 };
 
 // ====================== EXPORT ======================
@@ -1376,8 +1412,13 @@ const onPage = (event: any) => {
 };
 
 const onSort = (event: any) => {
-  lazyParams.value.sortField = event.sortField || 'id';
-  lazyParams.value.sortOrder = event.sortOrder === 1 ? 'asc' : 'desc';
+  if (!event.sortField) return;
+  lazyParams.value.sortField = event.sortField;
+  if (event.sortOrder !== null && event.sortOrder !== undefined) {
+    lazyParams.value.sortOrder = event.sortOrder === 1 ? 'asc' : 'desc';
+  } else {
+    lazyParams.value.sortOrder = lazyParams.value.sortOrder === 'asc' ? 'desc' : 'asc';
+  }
   saveStateToStorage();
   loadData();
 };
@@ -1403,10 +1444,15 @@ const onTextFilterInput = (event: any, filterName: string) => {
 
   if (!isClientMode.value) debounceFilter();
 };
-const onFilterClear      = () => {
+const onFilterClear = () => {
+  // Для серверного режиму — завжди перезапитуємо
   if (!isClientMode.value) {
     triggerFilterApply();
+    return;
   }
+  // Для клієнтського — Vue реактивність спрацює через computed clientFilteredItems
+  // але додатково скидаємо сторінку
+  clientFirst.value = 0;
 };
 const onFilterDateUpdate = () => {
   if (!isClientMode.value) {
@@ -1467,7 +1513,17 @@ watch(() => effectiveStorageKey.value, (newKey) => {
   }
 }, { immediate: true });
 
-watch(activeFilters, () => { saveStateToStorage(); }, { deep: true });
+
+watch(
+    activeFilters,
+    (newVal, oldVal) => {
+      saveStateToStorage();
+      if (!isClientMode.value && !isInitializing) {
+        debounceFilter();
+      }
+    },
+    { deep: true }
+);
 
 const hasVisibleFilters = computed(() => filtersState.value.some(f => f.visible));
 const showDownloadBtn   = computed(() => effectiveShowDownload.value);

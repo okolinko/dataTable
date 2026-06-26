@@ -196,6 +196,36 @@
               </div>
             </div>
 
+            <div
+                v-else-if="filter.type === 'select-with-other'"
+                class="filter-field"
+            >
+              <div class="select-with-other-wrapper">
+                <!-- Селект стандартної ширини -->
+                <Select
+                    :inputId="'field-' + filter.name"
+                    v-model="activeFilters[filter.name + '_select']"
+                    :options="filter.options || []"
+                    :placeholder="filter.placeholder || 'Оберіть...'"
+                    showClear
+                    @change="onSelectWithOtherChange(filter.name)"
+                    class="w-full"
+                />
+
+                <!-- Вспливаюче поле "Інше" -->
+                <Transition name="slide-down">
+                  <InputText
+                      v-if="isOtherSelected(filter.name)"
+                      :id="'field-' + filter.name + '-other'"
+                      v-model="activeFilters[filter.name + '_other']"
+                      :placeholder="filter.otherPlaceholder || 'Вкажіть значення...'"
+                      class="mt-2 w-full"
+                      @input="() => onOtherTextInput(filter.name)"
+                  />
+                </Transition>
+              </div>
+            </div>
+
             <DatePicker
                 v-else-if="filter.type === 'date'"
                 :key="'date-' + filter.name"
@@ -1019,6 +1049,14 @@ const initState = () => {
       activeFilters[f.name] = savedValue !== undefined ? savedValue : '';
     }
 
+    if (f.type === 'select-with-other') {
+      if (activeFilters[f.name + '_select'] === undefined) {
+        activeFilters[f.name + '_select'] = null;
+      }
+      if (activeFilters[f.name + '_other'] === undefined) {
+        activeFilters[f.name + '_other'] = '';
+      }
+    }
 
     if (f.inToolbar === true &&
         f.defaultValue !== undefined &&
@@ -1455,6 +1493,46 @@ const onFilterClear = () => {
   // але додатково скидаємо сторінку
   clientFirst.value = 0;
 };
+
+// Перевіряє, чи вибрано "Інше"
+const isOtherSelected = (filterName: string) => {
+  const selectVal = activeFilters[filterName + '_select'];
+  if (!selectVal) return false;
+
+  const filter = filtersState.value.find(f => f.name === filterName);
+  const otherLabel = filter?.otherLabel || 'Інше';
+
+  return selectVal === 'Інше' || selectVal === 'other' || selectVal === otherLabel;
+};
+
+// Обробка зміни селекту
+const onSelectWithOtherChange = (filterName: string) => {
+  const selectVal = activeFilters[filterName + '_select'];
+  const filter = filtersState.value.find(f => f.name === filterName);
+  const otherLabel = filter?.otherLabel || 'Інше';
+
+  if (selectVal === 'Інше' || selectVal === 'other' || selectVal === otherLabel) {
+    activeFilters[filterName] = null;           // очищуємо основне значення
+  } else {
+    activeFilters[filterName] = selectVal;      // звичайне значення
+    activeFilters[filterName + '_other'] = '';  // очищуємо текстове поле
+  }
+
+  if (!isClientMode.value) {
+    triggerFilterApply();
+  }
+};
+
+// Обробка введення тексту в поле "Інше"
+const onOtherTextInput = (filterName: string) => {
+  const otherValue = activeFilters[filterName + '_other']?.trim();
+  activeFilters[filterName] = otherValue || null;
+
+  if (!isClientMode.value) {
+    debounceFilter();   // або triggerFilterApply()
+  }
+};
+
 const onFilterDateUpdate = () => {
   if (!isClientMode.value) {
     triggerFilterApply();
@@ -1480,6 +1558,11 @@ const clearAllFilters = async () => {
     }
     else if (f.type === 'date_range') {
       activeFilters[f.name] = undefined;
+    }
+    else if (f.type === 'select-with-other') {
+      activeFilters[f.name] = null;
+      activeFilters[f.name + '_select'] = null;
+      activeFilters[f.name + '_other'] = '';
     }
     else {
       // date, year, integer, select, text і т.д.
@@ -1977,5 +2060,35 @@ onBeforeUnmount(() => destroyScrollSync());
 
 .toolbar-select {
   min-width: 380px;
+}
+
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
+}
+
+.slide-down-enter-to,
+.slide-down-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 60px;
+}
+.select-with-other-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Примусово робимо Select стандартної ширини */
+.select-with-other-wrapper :deep(.p-select) {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 </style>

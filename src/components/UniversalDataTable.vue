@@ -1419,6 +1419,7 @@ const onSort = (event: any) => {
   } else {
     lazyParams.value.sortOrder = lazyParams.value.sortOrder === 'asc' ? 'desc' : 'asc';
   }
+  lazyParams.value.page = 1;
   saveStateToStorage();
   loadData();
 };

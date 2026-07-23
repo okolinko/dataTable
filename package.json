@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@primevue/themes": "^4.5.4",
+    "jszip": "^3.10.1",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.5",
     "vue": "^3.5.32",

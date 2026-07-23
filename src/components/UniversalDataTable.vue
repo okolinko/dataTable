@@ -474,6 +474,7 @@ import Popover from 'primevue/popover';
 import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import MultiSelect from 'primevue/multiselect';
+import JSZip from 'jszip';
 
 // ====================== INTERFACES ======================
 
@@ -546,6 +547,7 @@ interface TableConfig {
   downloadFormat?: DownloadFormat;
   paginationMode?: PaginationMode;
   requestParams?: Record<string, any>;
+  maxRowsPerFile?: number;
 }
 
 interface ApiResponse {
@@ -573,6 +575,7 @@ const props = defineProps<{
   downloadFormat?: DownloadFormat;
   paginationMode?: PaginationMode;
   requestParams?: Record<string, any>;
+  maxRowsPerFile?: number;
 }>();
 
 // ====================== CONSTANTS (SVG) ======================
@@ -612,6 +615,12 @@ const effectivePaginationMode = computed<PaginationMode>(() =>
 const effectiveRequestParams = computed<Record<string, any>>(() => {
   const params = externalConfig.value?.requestParams || props.requestParams || {};
   return params;
+});
+
+const effectiveMaxRowsPerFile = computed(() => {
+  return externalConfig.value?.maxRowsPerFile
+      ?? props.maxRowsPerFile
+      ?? 30000;
 });
 
 // Чи увімкнений клієнтський режим
@@ -1307,37 +1316,168 @@ const generateCsv = (data: ClientExportResponse): void => {
   triggerDownload(blob, `${filename || effectiveDownloadFilename.value}.csv`);
 };
 
+const MAX_ROWS_PER_FILE = effectiveMaxRowsPerFile.value;
+
+// Генерація CSV як Blob
+const generateCsvBlob = (data: any): Blob => {
+  const { columns, rows } = data;
+  if (!columns || !rows) {
+    return new Blob([''], { type: 'text/csv;charset=utf-8;' });
+  }
+
+  const headerRow = columns.map((col: any) => col.header);
+  const dataRows = rows.map((row: any) =>
+      columns.map((col: any) => row[col.key] ?? '')
+  );
+
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+  const csv = XLSX.utils.sheet_to_csv(ws);
+
+  return new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+};
+
+// Генерація XLSX як Blob
+const generateXlsxBlob = (data: any): Blob => {
+  const { columns, rows } = data;
+  if (!columns || !rows) {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([['Немає даних']]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+    return new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+  }
+
+  const headerRow = columns.map((col: any) => col.header);
+  const dataRows = rows.map((row: any) =>
+      columns.map((col: any) => row[col.key] ?? '')
+  );
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+  ws['!cols'] = columns.map(() => ({ wch: 40 }));
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Звіт');
+
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([excelBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+};
+
+// Основна функція експорту
 const exportData = async (): Promise<void> => {
   downloadLoading.value = true;
+
   try {
     const cleanedFilters = getCleanedFilters();
-    const requestParams = { ...effectiveRequestParams.value };
-    // Об'єднуємо requestParams + cleanedFilters
-    const mergedFilters = { ...requestParams, ...cleanedFilters };
-    const response = await fetch(`${effectiveRequestUrl.value}-export`, {
+    const basePayload = {
+      filters: { ...effectiveRequestParams.value, ...cleanedFilters },
+      order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
+    };
+
+    // Отримуємо загальну кількість
+    const countRes = await fetch(`${effectiveRequestUrl.value}-export`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       },
-      body: JSON.stringify({
-        filters: mergedFilters,                    // ← Тут головне виправлення
-        order: { [lazyParams.value.sortField]: lazyParams.value.sortOrder },
-      })
+      body: JSON.stringify({ ...basePayload, limit: 1 })
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    const countData = await countRes.json();
+    const total = countData.total || 0;
+
+    if (total === 0) {
+      alert('Немає даних для вивантаження.');
+      return;
     }
 
-    const data: ClientExportResponse = await response.json();
-    if (effectiveDownloadFormat.value === 'csv') {
-      generateCsv(data);
+    const fileCount = Math.ceil(total / effectiveMaxRowsPerFile.value);
+    if (fileCount > 1) {
+      // === Багато файлів → ZIP ===
+      const zip = new JSZip();
+
+      for (let i = 0; i < fileCount; i++) {
+        const payload = {
+          ...basePayload,
+          limit:effectiveMaxRowsPerFile.value,
+          offset: i * effectiveMaxRowsPerFile.value
+        };
+
+        const res = await fetch(`${effectiveRequestUrl.value}-export`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error: ${res.status}`);
+        }
+
+        const data: any = await res.json();
+
+        let baseName = data.filename || effectiveDownloadFilename.value;
+        if (!baseName || baseName.trim() === '' || baseName === 'export') {
+          baseName = 'party_summary_info';
+        }
+
+        const fileName = `${baseName}_part${i + 1}`;
+
+        const blob = effectiveDownloadFormat.value === 'csv'
+            ? generateCsvBlob(data)
+            : generateXlsxBlob(data);
+
+        zip.file(`${fileName}.${effectiveDownloadFormat.value}`, blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      triggerDownload(zipBlob, `${effectiveDownloadFilename.value}.zip`);
+
+      alert(`Дані експорту (${total.toLocaleString('uk-UA')} записів) розбито на ${fileCount} файлів і запаковано в ZIP архів.`);
+
     } else {
-      generateXlsx(data);
+      // === Один файл — прямий вивантаж ===
+      const payload = {
+        ...basePayload,
+        limit: effectiveMaxRowsPerFile.value,
+        offset: 0
+      };
+
+      const res = await fetch(`${effectiveRequestUrl.value}-export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+
+      const data: any = await res.json();
+
+      let baseName = data.filename || effectiveDownloadFilename.value;
+      if (!baseName || baseName.trim() === '' || baseName === 'export') {
+        baseName = 'party_summary_info';
+      }
+
+      const blob = effectiveDownloadFormat.value === 'csv'
+          ? generateCsvBlob(data)
+          : generateXlsxBlob(data);
+
+      triggerDownload(blob, `${baseName}.${effectiveDownloadFormat.value}`);
     }
+
   } catch (error) {
     console.error('Помилка експорту:', error);
+    alert('Помилка під час вивантаження даних.');
   } finally {
     downloadLoading.value = false;
   }

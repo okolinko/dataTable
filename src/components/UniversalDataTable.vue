@@ -1153,6 +1153,27 @@ const saveStateToStorage = () => {
   }
 };
 
+const getAuthHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+
+  const token = localStorage.getItem('authKey');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const csrf = document
+      .querySelector('meta[name="csrf-token"]')
+      ?.getAttribute('content');
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf;
+  }
+
+  return headers;
+};
+
 // ====================== FILTERS & DATA ======================
 
 const getCleanedFilters = () => {
@@ -1225,11 +1246,9 @@ const loadData = async () => {
 
     const response = await fetch(effectiveRequestUrl.value, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      },
-      body: JSON.stringify(requestBody)
+      credentials: 'include',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(requestBody),
     });
 
     const data: ApiResponse = await response.json();
@@ -1381,10 +1400,8 @@ const exportData = async (): Promise<void> => {
     // Отримуємо загальну кількість
     const countRes = await fetch(`${effectiveRequestUrl.value}-export`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      },
+      credentials: 'include',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ ...basePayload, limit: 1 })
     });
 
@@ -1410,10 +1427,8 @@ const exportData = async (): Promise<void> => {
 
         const res = await fetch(`${effectiveRequestUrl.value}-export`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-          },
+          credentials: 'include',
+          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
 
@@ -1452,10 +1467,8 @@ const exportData = async (): Promise<void> => {
 
       const res = await fetch(`${effectiveRequestUrl.value}-export`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-        },
+        credentials: 'include',
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
 

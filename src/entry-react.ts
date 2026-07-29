@@ -3,6 +3,7 @@ import PrimeVue from 'primevue/config';
 import Aura from '@primevue/themes/aura';
 import { definePreset } from '@primevue/themes';
 import UniversalDataTable from './components/UniversalDataTable.vue';
+import Tooltip from 'primevue/tooltip';
 
 import 'primeicons/primeicons.css';
 
@@ -134,6 +135,8 @@ export function mountUniversalTable(container: HTMLElement | string, config: any
             options: { darkModeSelector: 'none' }
         }
     });
+
+    app.directive('tooltip', Tooltip);
 
     app.mount(target);
     apps.set(instanceId, app);

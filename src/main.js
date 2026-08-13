@@ -71,6 +71,10 @@ document.addEventListener('datatable:setConfig', (event) => {
         scrollable: config.scrollable ?? true,
         toolbarStart: config.toolbarStart || '',
         downloadFilename: config.downloadFilename || 'export',
+        downloadFormat: config.downloadFormat || 'xlsx',
+        paginationMode: config.paginationMode || 'server',
+        requestParams: config.requestParams || {},
+        maxRowsPerFile: config.maxRowsPerFile ?? 30000,
     });
 
     app.use(PrimeVue, {

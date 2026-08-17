@@ -459,7 +459,7 @@
   </div>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts" generic="TRow extends Record<string, unknown> = Record<string, unknown>">
 import {
   ref,
   reactive,
@@ -515,7 +515,7 @@ import { getEmptyFilterValue } from './utils/filters';
 const props = defineProps<{
   requestUrl?: string
   storageKey?: string
-  columnsConfig: ColumnConfig[]
+  columnsConfig: ColumnConfig<TRow>[]
   filtersConfig?: FilterConfig[]
   defaultOrder?: Record<string, 'asc' | 'desc'>
   showDownload?: boolean
@@ -533,7 +533,7 @@ const props = defineProps<{
 
 // ====================== EXTERNAL CONFIG ======================
 
-const externalConfig = ref<TableConfig | null>(null);
+const externalConfig = ref<TableConfig<TRow> | null>(null);
 
 const effectiveRequestUrl = computed(
     () => externalConfig.value?.requestUrl || props.requestUrl
@@ -604,7 +604,7 @@ const isClientMode = computed(
 const columnsPopover = ref<InstanceType<typeof Popover> | null>(null);
 const filtersPopover = ref<InstanceType<typeof Popover> | null>(null);
 const isFiltersPanelOpen = ref(true);
-const columnsState = ref<ColumnConfig[]>([]);
+const columnsState = ref<ColumnConfig<TRow>[]>([]);
 const filtersState = ref<FilterConfig[]>([]);
 const activeFilters = reactive<Record<string, unknown>>({});
 const lazyParams = ref<LazyParams>({
@@ -644,7 +644,7 @@ const {
 } = useScrollSync(isScrollEnabled, dtWrapper);
 
 const { items, allClientItems, totalRecords, loading, loadData } =
-    useTableData({
+    useTableData<TRow>({
       requestUrl: effectiveRequestUrl,
       storageKey: effectiveStorageKey,
       requestParams: effectiveRequestParams,
@@ -658,7 +658,7 @@ const { items, allClientItems, totalRecords, loading, loadData } =
     });
 
 const { clientFilteredItems, activeFilterChips, hasActiveFilters } =
-    useClientFilters({
+    useClientFilters<TRow>({
       allClientItems,
       columnsState,
       filtersState,
@@ -666,7 +666,7 @@ const { clientFilteredItems, activeFilterChips, hasActiveFilters } =
       globalSearch,
     });
 
-const { exportData } = useExport({
+const { exportData } = useExport<TRow>({
   requestUrl: effectiveRequestUrl,
   requestParams: effectiveRequestParams,
   filtersState,
@@ -701,7 +701,8 @@ const saveStateToStorage = () => {
     isFiltersPanelOpen: isFiltersPanelOpen.value,
     isScrollEnabled: isScrollEnabled.value,
     lazyParams: lazyParams.value,
-    columns: columnsState.value,
+    // storage зберігає лише name/visible — приводимо тип
+    columns: columnsState.value as ColumnConfig[],
     filters: filtersState.value,
     activeFilters,
     isInitializing,
@@ -1082,7 +1083,7 @@ watch(
 );
 
 onMounted(() => {
-  const handleConfig = (config: TableConfig | null) => {
+  const handleConfig = (config: TableConfig<TRow> | null) => {
     externalConfig.value = config ? { ...config } : null;
     nextTick(() => {
       initState();
@@ -1091,10 +1092,10 @@ onMounted(() => {
   };
 
   document.addEventListener('datatable:setConfig', ((e: CustomEvent) => {
-    handleConfig(e.detail as TableConfig);
+    handleConfig(e.detail as TableConfig<TRow>);
   }) as EventListener);
 
-  const win = window as Window & { datatableConfig?: TableConfig };
+  const win = window as Window & { datatableConfig?: TableConfig<TRow> };
   if (win.datatableConfig) {
     handleConfig(win.datatableConfig);
   }

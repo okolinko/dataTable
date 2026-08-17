@@ -8,7 +8,7 @@ import type {
 import { getAuthHeaders } from '../utils/auth';
 import { getCleanedFilters } from '../utils/filters';
 
-export function useTableData(options: {
+export function useTableData<TRow extends Record<string, unknown>>(options: {
     requestUrl: Ref<string | undefined>;
     storageKey: Ref<string | undefined>;
     requestParams: Ref<Record<string, unknown>>;
@@ -29,8 +29,8 @@ export function useTableData(options: {
         onAfterLoad,
     } = options;
 
-    const items = ref<Record<string, unknown>[]>([]);
-    const allClientItems = ref<Record<string, unknown>[]>([]);
+    const items = ref<TRow[]>([]);
+    const allClientItems = ref<TRow[]>([]);
     const totalRecords = ref(0);
     const loading = ref(true);
 
@@ -75,10 +75,10 @@ export function useTableData(options: {
                 body: JSON.stringify(requestBody),
             });
 
-            const data = (await response.json()) as ApiResponse;
+            const data = (await response.json()) as ApiResponse<TRow>;
 
             if (data.results) {
-                const list = data.results.list || [];
+                const list = (data.results.list || []) as TRow[];
 
                 if (isClientMode.value) {
                     allClientItems.value = list;

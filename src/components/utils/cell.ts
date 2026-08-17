@@ -1,8 +1,8 @@
 import type { ColumnConfig } from '../types';
 
-export function getCellText(
-    row: Record<string, unknown>,
-    col: ColumnConfig
+export function getCellText<TRow extends Record<string, unknown>>(
+    row: TRow,
+    col: ColumnConfig<TRow>
 ): string {
     let rawValue: unknown;
 

@@ -23,7 +23,9 @@ function triggerDownload(blob: Blob, filename: string): void {
     window.URL.revokeObjectURL(url);
 }
 
-function generateCsvBlob(data: ClientExportResponse): Blob {
+function generateCsvBlob<TRow extends Record<string, unknown>>(
+    data: ClientExportResponse<TRow>
+): Blob {
     const { columns, rows } = data;
     if (!columns || !rows) {
         return new Blob([''], { type: 'text/csv;charset=utf-8;' });
@@ -40,7 +42,9 @@ function generateCsvBlob(data: ClientExportResponse): Blob {
     return new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
 }
 
-function generateXlsxBlob(data: ClientExportResponse): Blob {
+function generateXlsxBlob<TRow extends Record<string, unknown>>(
+    data: ClientExportResponse<TRow>
+): Blob {
     const { columns, rows } = data;
 
     if (!columns || !rows) {
@@ -69,7 +73,7 @@ function generateXlsxBlob(data: ClientExportResponse): Blob {
     });
 }
 
-export function useExport(options: {
+export function useExport<TRow extends Record<string, unknown> = Record<string, unknown>>(options: {
     requestUrl: Ref<string | undefined>;
     requestParams: Ref<Record<string, unknown>>;
     filtersState: Ref<FilterConfig[]>;
@@ -148,7 +152,7 @@ export function useExport(options: {
                         throw new Error(`HTTP error: ${res.status}`);
                     }
 
-                    const data = (await res.json()) as ClientExportResponse;
+                    const data = (await res.json()) as ClientExportResponse<TRow>;
 
                     let baseName = data.filename || downloadFilename.value;
                     if (!baseName || baseName.trim() === '' || baseName === 'export') {
@@ -188,7 +192,7 @@ export function useExport(options: {
                     throw new Error(`HTTP error: ${res.status}`);
                 }
 
-                const data = (await res.json()) as ClientExportResponse;
+                const data = (await res.json()) as ClientExportResponse<TRow>;
 
                 let baseName = data.filename || downloadFilename.value;
                 if (!baseName || baseName.trim() === '' || baseName === 'export') {

@@ -1,14 +1,14 @@
 // ====================== COLUMN ======================
 
-export interface ColumnConfig {
+export interface ColumnConfig<TRow extends Record<string, unknown> = Record<string, unknown>> {
     name: string;
     title?: string;
     visible?: boolean;
     sortable?: boolean;
     width?: string;
     type?: 'computed';
-    fields?: string[];
-    value?: (data: Record<string, unknown>) => string | string[];
+    fields?: Array<Extract<keyof TRow, string>>;
+    value?: (data: TRow) => string | string[];
     class?: string;
     headerClass?: string;
     bodyClass?: string;
@@ -77,9 +77,9 @@ export interface ClientExportColumn {
     width?: number;
 }
 
-export interface ClientExportResponse {
+export interface ClientExportResponse<TRow extends Record<string, unknown> = Record<string, unknown>> {
     columns: ClientExportColumn[];
-    rows: Record<string, unknown>[];
+    rows: TRow[];
     filename?: string;
     total?: number;
 }
@@ -87,10 +87,10 @@ export interface ClientExportResponse {
 export type DownloadFormat = 'xlsx' | 'csv';
 export type PaginationMode = 'server' | 'client';
 
-export interface TableConfig {
+export interface TableConfig<TRow extends Record<string, unknown> = Record<string, unknown>> {
     requestUrl: string;
     storageKey: string;
-    columns: ColumnConfig[];
+    columns: ColumnConfig<TRow>[];
     filters?: FilterConfig[];
     order?: Record<string, 'asc' | 'desc'>;
     showDownload?: boolean;
@@ -106,19 +106,19 @@ export interface TableConfig {
     maxRowsPerFile?: number;
 }
 
-export interface ApiResponse {
+export interface ApiResponse<TRow extends Record<string, unknown> = Record<string, unknown>> {
     results?: {
-        list: Record<string, unknown>[];
+        list: TRow[];
         count: number;
     };
 }
 
 // ====================== PROPS ======================
 
-export interface TableProps {
+export interface TableProps<TRow extends Record<string, unknown> = Record<string, unknown>> {
     requestUrl?: string;
     storageKey?: string;
-    columnsConfig: ColumnConfig[];
+    columnsConfig: ColumnConfig<TRow>[];
     filtersConfig?: FilterConfig[];
     defaultOrder?: Record<string, 'asc' | 'desc'>;
     showDownload?: boolean;

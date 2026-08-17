@@ -9,9 +9,9 @@ import type {
 import { getCellText } from '../utils/cell';
 import { formatDateToLocalString, toDateOnlyISO } from '../utils/date';
 
-export function useClientFilters(options: {
-    allClientItems: Ref<Record<string, unknown>[]>;
-    columnsState: Ref<ColumnConfig[]>;
+export function useClientFilters<TRow extends Record<string, unknown>>(options: {
+    allClientItems: Ref<TRow[]>;
+    columnsState: Ref<ColumnConfig<TRow>[]>;
     filtersState: Ref<FilterConfig[]>;
     activeFilters: ActiveFilters;
     globalSearch: Ref<string>;
@@ -24,7 +24,7 @@ export function useClientFilters(options: {
         globalSearch,
     } = options;
 
-    const applyClientFilters = (row: Record<string, unknown>): boolean => {
+    const applyClientFilters = (row: TRow): boolean => {
         for (const f of filtersState.value) {
             if (!f.visible) continue;
 
@@ -114,7 +114,7 @@ export function useClientFilters(options: {
         return true;
     };
 
-    const clientFilteredItems = computed(() => {
+    const clientFilteredItems = computed<TRow[]>(() => {
         let result = allClientItems.value;
 
         const search = globalSearch.value.trim().toLowerCase();

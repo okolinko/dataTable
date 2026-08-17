@@ -1,9 +1,13 @@
-import { createApp, App } from 'vue';
+import { createApp, type App } from 'vue';
 import PrimeVue from 'primevue/config';
 import Aura from '@primevue/themes/aura';
 import { definePreset } from '@primevue/themes';
 import UniversalDataTable from './components/UniversalDataTable.vue';
 import Tooltip from 'primevue/tooltip';
+
+import type { TableConfig } from './components/types';
+// якщо types лежать поруч із UniversalDataTable.vue —
+// шлях має збігатися з вашою структурою
 
 import 'primeicons/primeicons.css';
 
@@ -15,9 +19,12 @@ const ukrainianLocale = {
     dayNamesMin: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
     monthNames: [
         'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
-        'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+        'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
     ],
-    monthNamesShort: ['Січ', 'Лют', 'Бер', 'Квіт', 'Трав', 'Черв', 'Лип', 'Серп', 'Вер', 'Жовт', 'Лист', 'Груд'],
+    monthNamesShort: [
+        'Січ', 'Лют', 'Бер', 'Квіт', 'Трав', 'Черв',
+        'Лип', 'Серп', 'Вер', 'Жовт', 'Лист', 'Груд',
+    ],
     today: 'Сьогодні',
     clear: 'Очистити',
     dateFormat: 'dd.mm.yy',
@@ -30,7 +37,7 @@ const ukrainianLocale = {
     day: 'День',
     allDayText: 'Весь день',
     startDate: 'Дата початку',
-    endDate: 'Дата закінчення'
+    endDate: 'Дата закінчення',
 };
 
 // ===== тема =====
@@ -47,18 +54,22 @@ const MyCustomTheme = definePreset(Aura, {
             700: '#0369a1',
             800: '#075985',
             900: '#0c4a6e',
-            950: '#032f4c'
+            950: '#032f4c',
         },
         highlight: {
             background: '#e0f2fe',
             focusBackground: '#bae6fd',
             color: '#0369a1',
-            focusColor: '#0c4a6e'
-        }
-    }
+            focusColor: '#0c4a6e',
+        },
+    },
 });
 
-const apps = new Map<string, App>();
+type DataTableWindow = Window & {
+    datatableConfig?: TableConfig;
+};
+
+const apps = new Map<string, App<Element>>();
 
 function generateInstanceId(): string {
     return `udt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -67,7 +78,7 @@ function generateInstanceId(): string {
 /**
  * Формує payload у форматі, який очікує externalConfig у UniversalDataTable
  */
-function buildExternalConfig(config: any) {
+function buildExternalConfig(config: TableConfig): TableConfig {
     return {
         requestUrl: config.requestUrl,
         storageKey: config.storageKey,
@@ -88,10 +99,14 @@ function buildExternalConfig(config: any) {
     };
 }
 
-export function mountUniversalTable(container: HTMLElement | string, config: any): string {
-    const target = typeof container === 'string'
-        ? document.querySelector(container) as HTMLElement | null
-        : container;
+export function mountUniversalTable(
+    container: HTMLElement | string,
+    config: TableConfig
+): string {
+    const target =
+        typeof container === 'string'
+            ? (document.querySelector(container) as HTMLElement | null)
+            : container;
 
     if (!target) {
         console.error('[UniversalDataTable] Container not found');
@@ -107,7 +122,7 @@ export function mountUniversalTable(container: HTMLElement | string, config: any
     target.dataset.udtInstanceId = instanceId;
 
     const externalConfigPayload = buildExternalConfig(config);
-    (window as any).datatableConfig = externalConfigPayload;
+    (window as DataTableWindow).datatableConfig = externalConfigPayload;
 
     const app = createApp(UniversalDataTable, {
         requestUrl: config.requestUrl,
@@ -132,8 +147,8 @@ export function mountUniversalTable(container: HTMLElement | string, config: any
         locale: ukrainianLocale,
         theme: {
             preset: MyCustomTheme,
-            options: { darkModeSelector: 'none' }
-        }
+            options: { darkModeSelector: 'none' },
+        },
     });
 
     app.directive('tooltip', Tooltip);
@@ -154,13 +169,19 @@ export function mountUniversalTable(container: HTMLElement | string, config: any
 
 export function unmountUniversalTable(instanceId: string): void {
     const app = apps.get(instanceId);
-    if (!app) return;
+    if (!app) {
+        return;
+    }
 
     app.unmount();
     apps.delete(instanceId);
 
-    const el = document.querySelector(`[data-udt-instance-id="${instanceId}"]`) as HTMLElement | null;
-    if (el) delete el.dataset.udtInstanceId;
+    const el = document.querySelector(
+        `[data-udt-instance-id="${instanceId}"]`
+    ) as HTMLElement | null;
+    if (el) {
+        delete el.dataset.udtInstanceId;
+    }
 }
 
 export function unmountAllUniversalTables(): void {

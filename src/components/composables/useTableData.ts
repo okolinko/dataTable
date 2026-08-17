@@ -36,7 +36,7 @@ export function useTableData<TRow extends Record<string, unknown>>(options: {
 
     const loadData = async () => {
         if (!requestUrl.value) {
-            console.log('⏳ loadData skipped — config not ready yet');
+            console.warn('⏳ loadData skipped — config not ready yet');
             return;
         }
 

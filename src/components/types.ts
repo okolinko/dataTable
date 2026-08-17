@@ -38,7 +38,7 @@ export interface FilterConfig {
     visible?: boolean;
     inToolbar?: boolean;
     defaultValue?: unknown;
-    options?: Array<Record<string, unknown> | string | number>;
+    options?: Array<Record<string, unknown> | string | number | boolean>;
     optionLabel?: string;
     optionValue?: string;
     placeholder?: string;

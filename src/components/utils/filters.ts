@@ -1,6 +1,45 @@
 import type { ActiveFilters, FilterConfig, RangeFilterValue } from '../types';
 import { formatDateToLocalString, toDateOnlyISO } from './date';
 
+export type NormalizedOption = {
+    label: string;
+    value: string | number | boolean;
+};
+
+/**
+ * Підтримує обидва формати options:
+ * - ['А', 'Б']
+ * - [{ label: 'А', value: 'a' }, ...]
+ * - [{ name: 'А', id: 1 }, ...] з optionLabel / optionValue
+ */
+export function normalizeFilterOptions(
+    options: FilterConfig['options'] | undefined,
+    optionLabel = 'label',
+    optionValue = 'value'
+): NormalizedOption[] {
+    if (!options?.length) return [];
+
+    return options.map((opt) => {
+        if (opt !== null && typeof opt === 'object' && !Array.isArray(opt)) {
+            const obj = opt as Record<string, unknown>;
+            const rawValue =
+                obj[optionValue] ?? obj.value ?? obj[optionLabel] ?? obj.label;
+            const rawLabel =
+                obj[optionLabel] ?? obj.label ?? obj[optionValue] ?? obj.value;
+
+            return {
+                label: String(rawLabel ?? ''),
+                value: rawValue as string | number | boolean,
+            };
+        }
+
+        return {
+            label: String(opt),
+            value: opt as string | number | boolean,
+        };
+    });
+}
+
 /** Готує activeFilters для відправки на сервер / export. */
 export function getCleanedFilters(
     filtersState: FilterConfig[],

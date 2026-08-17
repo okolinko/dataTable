@@ -10,9 +10,9 @@
           <Select
               :inputId="'toolbar-' + filter.name"
               v-model="activeFilters[filter.name]"
-              :options="filter.options || []"
-              :optionLabel="filter.optionLabel || 'label'"
-              :optionValue="filter.optionValue || 'value'"
+              :options="normalizeFilterOptions(filter.options, filter.optionLabel, filter.optionValue)"
+              optionLabel="label"
+              optionValue="value"
               @change="onFilterClear"
               class="toolbar-select"
               :style="{ minWidth: filter.minWidth || '380px' }"
@@ -151,7 +151,9 @@
                 :key="'select-' + filter.name"
                 :inputId="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
-                :options="filter.options"
+                :options="normalizeFilterOptions(filter.options, filter.optionLabel, filter.optionValue)"
+                optionLabel="label"
+                optionValue="value"
                 showClear
                 @change="onFilterClear"
                 :placeholder="filter.placeholder || 'Оберіть...'"
@@ -162,9 +164,9 @@
                 :key="'multi-' + filter.name"
                 :inputId="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
-                :options="filter.options"
-                :optionLabel="filter.optionLabel || 'label'"
-                :optionValue="filter.optionValue || 'value'"
+                :options="normalizeFilterOptions(filter.options, filter.optionLabel, filter.optionValue)"
+                optionLabel="label"
+                optionValue="value"
                 display="chip"
                 showClear
                 :placeholder="filter.placeholder || 'Оберіть...'"
@@ -205,7 +207,9 @@
                 <Select
                     :inputId="'field-' + filter.name"
                     v-model="activeFilters[filter.name + '_select']"
-                    :options="filter.options || []"
+                    :options="normalizeFilterOptions(filter.options, filter.optionLabel, filter.optionValue)"
+                    optionLabel="label"
+                    optionValue="value"
                     :placeholder="filter.placeholder || 'Оберіть...'"
                     showClear
                     @change="onSelectWithOtherChange(filter.name)"
@@ -508,7 +512,7 @@ import { useTableStorage } from './composables/useTableStorage';
 import { useTableData } from './composables/useTableData';
 import { useClientFilters } from './composables/useClientFilters';
 import { useExport } from './composables/useExport';
-import { getEmptyFilterValue } from './utils/filters';
+import { getEmptyFilterValue, normalizeFilterOptions } from './utils/filters';
 
 // ====================== PROPS ======================
 

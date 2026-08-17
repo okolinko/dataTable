@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import { getCellText } from '../utils/cell';
 import { formatDateToLocalString, toDateOnlyISO } from '../utils/date';
+import { normalizeFilterOptions } from '../utils/filters';
 
 export function useClientFilters<TRow extends Record<string, unknown>>(options: {
     allClientItems: Ref<TRow[]>;
@@ -23,6 +24,23 @@ export function useClientFilters<TRow extends Record<string, unknown>>(options: 
         activeFilters,
         globalSearch,
     } = options;
+
+    const resolveOptionLabel = (
+        filter: FilterConfig,
+        rawValue: unknown
+    ): string => {
+        const normalized = normalizeFilterOptions(
+            filter.options,
+            filter.optionLabel,
+            filter.optionValue
+        );
+
+        const found = normalized.find(
+            (opt) => String(opt.value) === String(rawValue)
+        );
+
+        return found ? found.label : String(rawValue ?? '');
+    };
 
     const applyClientFilters = (row: TRow): boolean => {
         for (const f of filtersState.value) {
@@ -173,6 +191,17 @@ export function useClientFilters<TRow extends Record<string, unknown>>(options: 
                 } else if (range?.to != null) {
                     displayValue = `до ${range.to}`;
                 }
+            } else if (f.type === 'multiselect' && Array.isArray(val)) {
+                displayValue = val
+                    .map((v) => resolveOptionLabel(f, v))
+                    .join(', ');
+            } else if (
+                (f.type === 'select' || f.type === 'select-with-other') &&
+                val !== null &&
+                val !== undefined &&
+                val !== ''
+            ) {
+                displayValue = resolveOptionLabel(f, val);
             } else if (Array.isArray(val)) {
                 displayValue = val.join(', ');
             } else if (val instanceof Date) {

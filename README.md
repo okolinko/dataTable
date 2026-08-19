@@ -31,6 +31,7 @@
 - [Встановлення та збірка](#встановлення-та-збірка)
 - [Структура файлів](#структура-файлів)
 - [Підключення](#підключення)
+- [Використання в проєкті на Vue.js](#використання-в-проєкті-на-vuejs)
 - [Конфігурація](#конфігурація)
 - [Колонки](#колонки)
 - [Фільтри](#фільтри)
@@ -243,6 +244,228 @@ export default function PartiesTable() {
   return <div ref={rootRef} />;
 }
 ```
+
+---
+
+## Використання в проєкті на Vue.js
+
+Є **два шляхи**, залежно від того, як зібраний Vue-проєкт.
+
+### Що обрати
+
+| Ситуація | Варіант |
+|----------|---------|
+| Повноцінний Vue 3 SPA (Vite / Vue CLI) | **A** — імпорт компонента |
+| Yii / PHP + статичний JS | **B** — бандл + `datatable:setConfig` |
+| Vue на одній сторінці без збірки SFC | **B** |
+
+---
+
+### Варіант A — Vue SPA (Vite / Vue CLI), імпорт компонента
+
+Якщо це звичайний Vue 3 проєкт — підключаєте `UniversalDataTable` як звичайний SFC-компонент.
+
+Структуру `components/UniversalDataTable/` (`.vue` + `composables` + `utils` + `types`) можна скопіювати в проєкт як є або підключити як локальний пакет.
+
+#### 1. Залежності
+
+```bash
+npm install vue primevue @primevue/themes primeicons xlsx jszip
+```
+
+#### 2. PrimeVue у `main.js` / `main.ts`
+
+```ts
+import { createApp } from 'vue'
+import PrimeVue from 'primevue/config'
+import Aura from '@primevue/themes/aura'
+import { definePreset } from '@primevue/themes'
+import Tooltip from 'primevue/tooltip'
+import 'primeicons/primeicons.css'
+
+import App from './App.vue'
+
+const MyTheme = definePreset(Aura, {
+  semantic: {
+    primary: {
+      500: '#0369a1',
+      600: '#0284c7',
+    },
+  },
+})
+
+const app = createApp(App)
+
+app.use(PrimeVue, {
+  locale: {
+    // повну uk-локаль можна скопіювати з src/main.js бандла
+    firstDayOfWeek: 1,
+    today: 'Сьогодні',
+    clear: 'Очистити',
+  },
+  theme: {
+    preset: MyTheme,
+    options: { darkModeSelector: 'none' },
+  },
+})
+
+app.directive('tooltip', Tooltip)
+app.mount('#app')
+```
+
+#### 3. Сторінка / view
+
+```vue
+<template>
+  <div class="page">
+    <h1>Список користувачів</h1>
+
+    <UniversalDataTable
+      :request-url="config.requestUrl"
+      :storage-key="config.storageKey"
+      :columns-config="config.columns"
+      :filters-config="config.filters"
+      :default-order="config.order"
+      :show-download="config.showDownload"
+      :pagination-mode="config.paginationMode"
+      :download-filename="config.downloadFilename"
+      :download-format="config.downloadFormat"
+      :rows-per-page-options="config.rowsPerPageOptions"
+      :scrollable="true"
+      :filters-expanded="true"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { reactive } from 'vue'
+import UniversalDataTable from '@/components/UniversalDataTable/UniversalDataTable.vue'
+import type { ColumnConfig, FilterConfig } from '@/components/UniversalDataTable/types'
+
+const config = reactive({
+  requestUrl: '/api/v1/users/list',
+  storageKey: 'users_list',
+  showDownload: true,
+  paginationMode: 'server' as const,
+  downloadFilename: 'users_export',
+  downloadFormat: 'xlsx' as const,
+  rowsPerPageOptions: [10, 25, 50, 100],
+  order: { id: 'desc' as const },
+  columns: [
+    { name: 'id', title: 'ID', sortable: true },
+    { name: 'name', title: 'Ім’я', sortable: true },
+    {
+      name: 'actions',
+      title: 'Дія',
+      headerClass: 'text-center',
+      bodyClass: 'text-center',
+      value: (row: Record<string, unknown>) =>
+        `<a href="/users/${row.id}">Відкрити</a>`,
+    },
+  ] as ColumnConfig[],
+  filters: [
+    { name: 'name', title: 'Ім’я', type: 'text', visible: true },
+    {
+      name: 'status',
+      title: 'Статус',
+      type: 'select',
+      visible: true,
+      options: ['Активний', 'Неактивний'],
+    },
+  ] as FilterConfig[],
+})
+</script>
+```
+
+#### Відповідність config → props
+
+| Поле в `TableConfig` / `detail` | Prop компонента |
+|---------------------------------|-----------------|
+| `columns` | `columnsConfig` |
+| `filters` | `filtersConfig` |
+| `order` | `defaultOrder` |
+| решта | ті самі імена (`requestUrl`, `storageKey`, `showDownload`, …) |
+
+У шаблоні Vue props пишуться в kebab-case: `columns-config`, `request-url` тощо.
+
+---
+
+### Варіант B — зібраний бандл (як для Yii), без імпорту `.vue`
+
+Якщо фронт — HTML + підключений JS, або потрібен лише готовий `dist` без SFC.
+
+#### Збірка
+
+```bash
+npm run build:vue
+```
+
+Артефакти:
+
+- `dist/js/prime-datatable.js`
+- `dist/css/prime-datatable.css`
+
+#### Підключення
+
+```html
+<link rel="stylesheet" href="/dist/css/prime-datatable.css" />
+
+<div id="datatable"></div>
+
+<script src="/dist/js/prime-datatable.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.dispatchEvent(
+      new CustomEvent('datatable:setConfig', {
+        detail: {
+          requestUrl: '/api/v1/users/list',
+          storageKey: 'users_list',
+          columns: [
+            { name: 'id', title: 'ID', sortable: true },
+            { name: 'name', title: 'Ім’я', sortable: true },
+          ],
+          filters: [
+            { name: 'name', title: 'Ім’я', type: 'text', visible: true },
+          ],
+          order: { id: 'desc' },
+          showDownload: true,
+          paginationMode: 'server',
+        },
+      })
+    )
+  })
+</script>
+```
+
+Бандл сам створює Vue-додаток і монтує таблицю в `#datatable`. Окремий `createApp` на сторінці для таблиці **не потрібен**.
+
+Альтернатива: покласти конфіг у `window.datatableConfig` **до** завантаження скрипта — компонент підхопить його в `onMounted`.
+
+---
+
+### Спільні вимоги для обох варіантів
+
+1. **API даних:** `POST {requestUrl}` → `{ results: { list, count } }`
+2. **Експорт:** `POST {requestUrl}-export` (див. розділ [Експорт](#експорт))
+3. **TypeScript (варіант A):** рядок можна типізувати дженериком:
+
+```ts
+interface UserRow extends Record<string, unknown> {
+  id: number
+  name: string
+}
+
+const columns: ColumnConfig<UserRow>[] = [
+  { name: 'id', title: 'ID', sortable: true },
+  {
+    name: 'name',
+    title: 'Ім’я',
+    value: (row) => row.name, // row: UserRow
+  },
+]
+```
+
+4. **Не змішуйте варіанти:** якщо використовуєте **A** (імпорт SFC), не підключайте одночасно IIFE-бандл з **B** — будуть два інстанси Vue/PrimeVue.
 
 ---
 

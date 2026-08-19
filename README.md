@@ -1,167 +1,126 @@
 # UniversalDataTable
 
-Універсальний компонент таблиці даних на базі Vue 3 + PrimeVue. Підтримує два режими роботи (серверний та клієнтський), фільтрацію, сортування, керування видимістю колонок, збереження стану у `localStorage` та клієнтський експорт у форматах `xlsx` / `csv`.
+Універсальний компонент таблиці даних на базі **Vue 3 + PrimeVue**. Працює як окремий бандл для Yii2 / Laravel / звичайного HTML (подія `datatable:setConfig`) і як бібліотека для React (`mountUniversalTable`).
+
+Підтримує серверну та клієнтську пагінацію, фільтрацію, сортування, керування видимістю колонок, збереження стану в `localStorage` і клієнтський експорт у **xlsx / csv** (з розбиттям на ZIP).
 
 ---
 
 ## Ключові можливості
 
-- Два режими роботи: **серверний** (пагінація на сервері) та **клієнтський** (всі дані на клієнті)
-- Кастомні горизонтальні скролбари (верхній + нижній) з синхронізацією
-- Гнучка система фільтрів (text, select, multiselect, date, date_range, year, range, integer)
-- Підтримка обчислюваних колонок (`computed`) та кастомних рендерерів (`value`)
+- Два режими: серверний (`paginationMode: 'server'`) і клієнтський (`paginationMode: 'client'`)
+- Фільтри: `text` / `string` / `varchar`, `integer`, `select`, `multiselect`, `select-with-other`, `date`, `date_range`, `year`, `range`
+- Панель застосованих фільтрів (чіпи з можливістю зняти один або всі)
+- Фільтри в тулбарі (`inToolbar`) і ширина комірки фільтра (`colSpan`)
+- Обчислювані колонки (`type: 'computed'`) і кастомний HTML-рендер (`value`)
+- Верхній і нижній кастомні скролбари з синхронізацією
 - Повне збереження стану таблиці в `localStorage`
-- Клієнтський експорт у **XLSX** та **CSV** (з підтримкою кирилиці)
-- Кастомний контент у тулбарі (`toolbarStart`)
-- Підтримка кастомних CSS-класів для колонок
-- Українська локалізація та кастомні теми PrimeVue
-- Можливість зібрати версію як для Vue.js, так і для react.
+- Експорт у XLSX / CSV (UTF-8 BOM) з пагінацією `limit` / `offset` і ZIP при великому обсязі
+- Додаткові параметри запиту (`requestParams`) — мерджаться у `filters`
+- Програмне керування: `datatable:setConfig`, `datatable:setFilter`, `datatable:dataLoaded`
+- Авторизація: Bearer з `localStorage.authKey` і CSRF з `<meta name="csrf-token">`
+- Українська локалізація PrimeVue і кастомна тема Aura
+- Збірка для Vue (IIFE) і для React (ES + UMD)
+- TypeScript-дженерики (`TRow`) для колонок і рядків
+
+---
+
+## Зміст
+
+- [Режими роботи таблиці](#режими-роботи-таблиці)
+- [Встановлення та збірка](#встановлення-та-збірка)
+- [Структура файлів](#структура-файлів)
+- [Підключення](#підключення)
+- [Конфігурація](#конфігурація)
+- [Колонки](#колонки)
+- [Фільтри](#фільтри)
+- [Типи колонок з прикладами](#типи-колонок-з-прикладами)
+- [Типи фільтрів з прикладами](#типи-фільтрів-з-прикладами)
+- [Події](#події)
+- [API сервера](#api-сервера)
+- [Експорт](#експорт)
+- [Повний приклад ініціалізації](#повний-приклад-ініціалізації)
+- [Збереження стану](#збереження-стану)
+- [Авторизація запитів](#авторизація-запитів)
+- [Кастомна тема](#кастомна-тема)
+- [CSS-класи](#css-класи)
+- [Важливі особливості та обмеження](#важливі-особливості-та-обмеження)
 
 ---
 
 ## Режими роботи таблиці
 
-Компонент підтримує два режими роботи, які визначаються параметром `paginationMode`:
+Режим задається параметром `paginationMode`.
 
 ### 1. Серверний режим (`paginationMode: 'server'`) — за замовчуванням
 
-**Принцип роботи:**
-- При кожній зміні сторінки, сортуванні або фільтрі виконується запит до сервера
-- Сервер повертає ТІЛЬКИ дані для поточної сторінки
-- Підходить для великих таблиць (>5000 рядків)
+При кожній зміні сторінки, сортування або фільтра виконується `POST` на `requestUrl`. Сервер повертає лише поточну сторінку.
 
-**Переваги:**
-- Мінімальне використання пам'яті браузера
-- Швидке початкове завантаження
-- Фільтрація на стороні сервера (можна використовувати індекси БД)
-
-**Недоліки:**
-- Затримка при кожній зміні сторінки/фільтра
-- Більше навантаження на сервер
+Підходить для великих таблиць (тисячі рядків і більше). Текстові та числові фільтри мають debounce **500 мс**.
 
 ### 2. Клієнтський режим (`paginationMode: 'client'`)
 
-**Принцип роботи:**
-- При ініціалізації виконується ОДИН запит до сервера
-- Сервер повертає ВСІ дані (без пагінації)
-- Вся подальша фільтрація, сортування та пагінація відбуваються на клієнті
+При ініціалізації виконується один запит без `pager`. Далі фільтрація, глобальний пошук, сортування і пагінація працюють на клієнті.
 
-**Переваги:**
-- Миттєва реакція на зміну фільтрів та сортування
-- Відсутність затримок мережі
-- Глобальний пошук по всіх колонках (доступний тільки в цьому режимі)
-- Зменшення навантаження на сервер
+**Особливості:**
 
-**Недоліки:**
-- Більше використання пам'яті браузера
-- Повільніше початкове завантаження при великій кількості даних
-- Не підходить для таблиць з >2000 рядків
+- Над панеллю фільтрів з’являється глобальний пошук по видимих колонках (колонка `actions` ігнорується)
+- Фільтри застосовуються миттєво, без debounce
+- При зміні фільтрів або глобального пошуку пагінатор скидається на першу сторінку
+- Експорт завжди йде на сервер (`{requestUrl}-export`) з поточними фільтрами — це **не** клієнтський дамп уже завантажених рядків
 
-**Особливості клієнтського режиму:**
-- Глобальний пошук з'являється над панеллю фільтрів
-- Фільтри застосовуються миттєво (без debounce)
-- Панель фільтрів та глобальний пошук працюють разом
-- При скиданні фільтрів сторінка скидається на першу
-
-### Коли використовувати клієнтський режим?
-
-✅ **Доцільно використовувати:**
-- Таблиці з <2000 рядків
-- Часта зміна фільтрів/пошуку
-- Важлива швидкість взаємодії
-- Дані рідко оновлюються на сервері
-
-❌ **Не рекомендується:**
-- Таблиці з >2000 рядків
-- Обмеження пам'яті на клієнті
-- Дані часто оновлюються на сервері
-- Складні фільтри на стороні БД
+**Коли доцільно:** таблиці приблизно до 2000 рядків, часта зміна фільтрів, дані рідко оновлюються на сервері.
 
 ---
 
-## Встановлення
+## Встановлення та збірка
 
-```sh
-npm install vue primevue @primevue/themes primeicons xlsx
-```
-
-### Компіляція компоненту версія розробки (Vue.js)
-
-```sh
-npm run dev
-```
-
-### Компіляція Vue.js версії компоненту (мініфікований)
-
-```sh
-npm run build:vue
-```
-
-### Компіляція React версії компоненту (мініфікований)
-
-```sh
-npm run build:react
-```
-
-### Компіляція двох версій компоненту
-
-```sh
-npm run build:all
-```
----
-
-## Зміст
-
-- [Залежності](#залежності)
-- [Структура файлів](#структура-файлів)
-- [Підключення](#підключення)
-- [Конфігурація](#конфігурація)
-  - [Загальні параметри](#загальні-параметри)
-  - [Колонки](#колонки)
-  - [Фільтри](#фільтри)
-  - [Експорт](#експорт)
-- [Всі типи колонок з прикладами](#всі-типи-колонок-з-прикладами)
-- [Всі типи фільтрів з прикладами](#всі-типи-фільтрів-з-прикладами)
-- [API сервера](#api-сервера)
-  - [Запит даних (серверний режим)](#запит-даних-серверний-режим)
-  - [Запит даних (клієнтський режим)](#запит-даних-клієнтський-режим)
-  - [Відповідь даних](#відповідь-даних)
-  - [Запит експорту](#запит-експорту)
-  - [Відповідь експорту](#відповідь-експорту)
-- [Повний приклад ініціалізації](#повний-приклад-ініціалізації)
-- [Збереження стану](#збереження-стану)
-- [Кастомна тема](#кастомна-тема)
-- [CSS-класи для значень колонок](#css-класи-для-значень-колонок)
-- [Важливі особливості та обмеження](#важливі-особливості-та-обмеження)
-
----
-
-## Залежності
+Потрібен **Node.js** `^20.19.0` або `>=22.12.0`.
 
 ```bash
-npm install vue primevue @primevue/themes primeicons xlsx
+npm install
 ```
 
-| Пакет | Призначення |
-|---|---|
-| `vue` | Vue 3 |
-| `primevue` | UI-компоненти (DataTable, Button, Select тощо) |
-| `@primevue/themes` | Теми (Aura, Lara тощо) |
-| `primeicons` | Іконки |
-| `xlsx` | Генерація XLSX / CSV на клієнті (SheetJS) |
+Залежності рантайму: `vue`, `primevue`, `@primevue/themes`, `primeicons`, `xlsx`, `jszip`.
+
+| Скрипт | Що робить |
+|--------|-----------|
+| `npm run dev` | Збірка Vue-бандла без мініфікації, із sourcemap |
+| `npm run build` / `npm run build:vue` | Мініфікований Vue-бандл (`dist/js/prime-datatable.js`, `dist/css/prime-datatable.css`) |
+| `npm run build:react` | React-бібліотека ES + UMD (`dist/js/prime-datatable-react.es.js`, `prime-datatable-react.umd.js`, `dist/css/prime-datatable-react.css`) |
+| `npm run build:all` | Спочатку Vue (чистить `dist`), потім React (не затирає Vue-артефакти) |
+| `npm run lint` / `npm run lint:fix` | ESLint |
+
+> Vue-збірка чистить `dist` (`emptyOutDir: true`). React-збірка — ні. Тому `build:all` треба запускати саме в такому порядку.
 
 ---
 
 ## Структура файлів
 
-```
+```text
 src/
+  main.js                      # Vue-бандл: слухає datatable:setConfig і монтує #datatable
+  entry-react.ts               # React-бандл: mountUniversalTable / unmountUniversalTable
   components/
-    UniversalDataTable.vue   # Сам компонент
-  main.ts                    # Точка входу, ініціалізація Vue + PrimeVue
+    UniversalDataTable.vue     # UI таблиці
+    types.ts                   # ColumnConfig, FilterConfig, TableConfig, …
+    index.ts                   # реекспорт компонента і типів
+    composables/
+      useTableData.ts          # завантаження рядків
+      useClientFilters.ts      # клієнтська фільтрація, чіпи
+      useExport.ts             # xlsx / csv / zip
+      useTableStorage.ts       # localStorage
+      useScrollSync.ts         # синхронізація скролбарів
+    utils/
+      filters.ts               # normalizeFilterOptions, getCleanedFilters
+      auth.ts                  # Bearer + CSRF
+      cell.ts                  # stripHtml, getCellText
+      date.ts                  # форматування дат
+    constants/
+      icons.ts
 ```
 
-В HTML-сторінці обов'язково повинен бути контейнер з `id="datatable"`:
+У HTML для Vue-бандла потрібен контейнер:
 
 ```html
 <div id="datatable"></div>
@@ -171,304 +130,117 @@ src/
 
 ## Підключення
 
-Компонент ініціалізується через подію `datatable:setConfig`. Це дозволяє використовувати його з будь-якого місця — у Blade-шаблонах, PHP-в'юхах (Yii2, Laravel), або звичайному JS.
+### Vue / Yii2 / Laravel / звичайний JS
 
-### `main.ts` — базовий вхідний файл Vue.js
+Компонент ініціалізується подією `datatable:setConfig`. Точка входу — `src/main.js`: вона створює Vue-додаток, підключає PrimeVue (українська локаль + кастомна Aura) і монтує таблицю в `#datatable`.
 
-```typescript
-import { createApp } from 'vue';
-import PrimeVue from 'primevue/config';
-import Aura from '@primevue/themes/aura';
-import { definePreset } from '@primevue/themes';
-import UniversalDataTable from './components/UniversalDataTable.vue';
-import 'primeicons/primeicons.css';
-
-const ukrainianLocale = {
-    firstDayOfWeek: 1,
-    dayNames: ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота'],
-    dayNamesShort: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
-    dayNamesMin: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
-    monthNames: ['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
-    monthNamesShort: ['Січ','Лют','Бер','Квіт','Трав','Черв','Лип','Серп','Вер','Жовт','Лист','Груд'],
-    today: 'Сьогодні',
-    clear: 'Очистити',
-    dateFormat: 'dd.mm.yy',
-    weekHeader: 'Тиж',
-};
-
-const MyCustomTheme = definePreset(Aura, {
-    semantic: {
-        primary: {
-            500: '#0369a1',
-            600: '#0284c7',
-            700: '#0369a1',
-        }
-    }
-});
-
-document.addEventListener('datatable:setConfig', (event: any) => {
-    const config = event.detail;
-
-    const app = createApp(UniversalDataTable, {
-        requestUrl:         config.requestUrl,
-        storageKey:         config.storageKey,
-        columnsConfig:      config.columns,
-        filtersConfig:      config.filters        || [],
-        defaultOrder:       config.order          || {},
-        showDownload:       config.showDownload   ?? false,
-        filtersExpanded:    config.filtersExpanded ?? true,
-        rowsPerPageOptions: config.rowsPerPageOptions || [10, 25, 50, 100],
-        scrollable:         config.scrollable     ?? true,
-        toolbarStart:       config.toolbarStart   || '',
-        downloadFilename:   config.downloadFilename || 'export',
-        downloadFormat:     config.downloadFormat  || 'xlsx',
-        paginationMode:     config.paginationMode  || 'server',
-    });
-
-    app.use(PrimeVue, {
-        locale: ukrainianLocale,
-        theme: {
-            preset: MyCustomTheme,
-            options: { darkModeSelector: 'none' }
-        }
-    });
-
-    app.mount('#datatable');
+```js
+document.addEventListener('DOMContentLoaded', () => {
+  document.dispatchEvent(new CustomEvent('datatable:setConfig', {
+    detail: {
+      requestUrl: '/api/v1/users/list',
+      storageKey: 'users_list',
+      columns,
+      filters,
+      order: { id: 'desc' },
+      showDownload: true,
+      showColumnsButton: true,
+      filtersExpanded: true,
+      rowsPerPageOptions: [10, 25, 50, 100],
+      scrollable: true,
+      downloadFilename: 'users_export',
+      downloadFormat: 'xlsx',
+      paginationMode: 'server', // або 'client'
+      requestParams: {},
+      maxRowsPerFile: 30000,
+    },
+  }));
 });
 ```
 
-### `entry-react.ts` — базовий вхідний файл React
-```javascript
-import { createApp, App } from 'vue';
-import PrimeVue from 'primevue/config';
-import Aura from '@primevue/themes/aura';
-import { definePreset } from '@primevue/themes';
-import UniversalDataTable from './components/UniversalDataTable.vue';
+Можна також покласти конфіг у `window.datatableConfig` до монтування — компонент підхопить його в `onMounted`.
 
-import 'primeicons/primeicons.css';
+### React
 
-// ===== локалізація =====
-const ukrainianLocale = {
-    firstDayOfWeek: 1,
-    dayNames: ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П’ятниця', 'Субота'],
-    dayNamesShort: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
-    dayNamesMin: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
-    monthNames: [
-        'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
-        'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
-    ],
-    monthNamesShort: ['Січ', 'Лют', 'Бер', 'Квіт', 'Трав', 'Черв', 'Лип', 'Серп', 'Вер', 'Жовт', 'Лист', 'Груд'],
-    today: 'Сьогодні',
-    clear: 'Очистити',
-    dateFormat: 'dd.mm.yy',
-    weekHeader: 'Тиж',
-    chooseDate: 'Оберіть дату',
-    prevMonth: 'Попередній місяць',
-    nextMonth: 'Наступний місяць',
-    month: 'Місяць',
-    week: 'Тиждень',
-    day: 'День',
-    allDayText: 'Весь день',
-    startDate: 'Дата початку',
-    endDate: 'Дата закінчення'
-};
+Точка входу — `src/entry-react.ts`. Експортуються:
 
-// ===== тема =====
-const MyCustomTheme = definePreset(Aura, {
-    semantic: {
-        primary: {
-            50: '#f0f9ff',
-            100: '#e0f2fe',
-            200: '#bae6fd',
-            300: '#7dd3fc',
-            400: '#38bdf8',
-            500: '#0369a1',
-            600: '#0284c7',
-            700: '#0369a1',
-            800: '#075985',
-            900: '#0c4a6e',
-            950: '#032f4c'
-        },
-        highlight: {
-            background: '#e0f2fe',
-            focusBackground: '#bae6fd',
-            color: '#0369a1',
-            focusColor: '#0c4a6e'
-        }
-    }
+| Функція | Опис |
+|---------|------|
+| `mountUniversalTable(container, config)` | Монтує таблицю в DOM-елемент або CSS-селектор, повертає `instanceId` |
+| `unmountUniversalTable(instanceId)` | Розмонтовує один інстанс |
+| `unmountAllUniversalTables()` | Розмонтовує всі інстанси |
+
+Повторний `mount` у той самий контейнер спочатку знімає попередній інстанс.
+
+```js
+import {
+  mountUniversalTable,
+  unmountUniversalTable,
+} from './prime-datatable-react.es.js';
+
+const instanceId = mountUniversalTable('#datatable', {
+  requestUrl: '/api/v1/registry/parties/api/list',
+  storageKey: 'my-test-table',
+  columns: [
+    { name: 'edrpou_code', title: 'Код ЄДРПОУ', visible: true, sortable: true },
+    { name: 'name_edr', title: 'Назва ЮО', visible: true, sortable: true },
+  ],
+  filters: [
+    { name: 'edrpou_code', type: 'string', title: 'Код ЄДРПОУ', visible: true },
+    { name: 'name_edr', type: 'string', title: 'Назва ЮО', visible: true },
+  ],
+  showDownload: true,
+  scrollable: true,
+  filtersExpanded: false,
+  downloadFormat: 'csv',
+  downloadFilename: 'party_registry_export',
+  maxRowsPerFile: 30000,
 });
-
-const apps = new Map<string, App>();
-
-function generateInstanceId(): string {
-    return `udt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-/**
- * Формує payload у форматі, який очікує externalConfig у UniversalDataTable
- */
-function buildExternalConfig(config: any) {
-    return {
-        requestUrl: config.requestUrl,
-        storageKey: config.storageKey,
-        columns: config.columns,
-        filters: config.filters || [],
-        order: config.order || {},
-        showDownload: config.showDownload ?? false,
-        showColumnsButton: config.showColumnsButton ?? true,
-        filtersExpanded: config.filtersExpanded ?? true,
-        rowsPerPageOptions: config.rowsPerPageOptions || [10, 25, 50, 100],
-        scrollable: config.scrollable ?? true,
-        toolbarStart: config.toolbarStart || '',
-        downloadFilename: config.downloadFilename || 'export',
-        downloadFormat: config.downloadFormat || 'xlsx',
-        paginationMode: config.paginationMode || 'server',
-        requestParams: config.requestParams || {},
-        maxRowsPerFile: config.maxRowsPerFile ?? 30000,
-    };
-}
-
-export function mountUniversalTable(container: HTMLElement | string, config: any): string {
-    const target = typeof container === 'string'
-        ? document.querySelector(container) as HTMLElement | null
-        : container;
-
-    if (!target) {
-        console.error('[UniversalDataTable] Container not found');
-        return '';
-    }
-
-    const existingId = target.dataset.udtInstanceId;
-    if (existingId && apps.has(existingId)) {
-        unmountUniversalTable(existingId);
-    }
-
-    const instanceId = generateInstanceId();
-    target.dataset.udtInstanceId = instanceId;
-
-    const externalConfigPayload = buildExternalConfig(config);
-    (window as any).datatableConfig = externalConfigPayload;
-
-    const app = createApp(UniversalDataTable, {
-        requestUrl: config.requestUrl,
-        storageKey: config.storageKey,
-        columnsConfig: config.columns,
-        filtersConfig: config.filters || [],
-        defaultOrder: config.order || {},
-        showDownload: config.showDownload ?? false,
-        showColumnsButton: config.showColumnsButton ?? true,
-        filtersExpanded: config.filtersExpanded ?? true,
-        rowsPerPageOptions: config.rowsPerPageOptions || [10, 25, 50, 100],
-        scrollable: config.scrollable ?? true,
-        toolbarStart: config.toolbarStart || '',
-        downloadFilename: config.downloadFilename || 'export',
-        downloadFormat: config.downloadFormat || 'xlsx',
-        paginationMode: config.paginationMode || 'server',
-        requestParams: config.requestParams || {},
-        maxRowsPerFile: config.maxRowsPerFile ?? 30000,
-    });
-
-    app.use(PrimeVue, {
-        locale: ukrainianLocale,
-        theme: {
-            preset: MyCustomTheme,
-            options: { darkModeSelector: 'none' }
-        }
-    });
-
-    app.mount(target);
-    apps.set(instanceId, app);
-    
-    setTimeout(() => {
-        document.dispatchEvent(
-            new CustomEvent('datatable:setConfig', {
-                detail: externalConfigPayload,
-            })
-        );
-    }, 0);
-
-    return instanceId;
-}
-
-export function unmountUniversalTable(instanceId: string): void {
-    const app = apps.get(instanceId);
-    if (!app) return;
-
-    app.unmount();
-    apps.delete(instanceId);
-
-    const el = document.querySelector(`[data-udt-instance-id="${instanceId}"]`) as HTMLElement | null;
-    if (el) delete el.dataset.udtInstanceId;
-}
-
-export function unmountAllUniversalTables(): void {
-    for (const [id] of apps) {
-        unmountUniversalTable(id);
-    }
-}
-```
-### Виклик у JavaScript / PHP-в'юсі
-
-```javascript
-const init = () => {
-    document.dispatchEvent(new CustomEvent('datatable:setConfig', {
-        detail: {
-            requestUrl:         '/api/v1/users/list',
-            storageKey:         'users_list',
-            columns:            columns,
-            filters:            filters,
-            order:              { id: 'desc' },
-            showDownload:       true,
-            filtersExpanded:    true,
-            rowsPerPageOptions: [10, 25, 50, 100],
-            scrollable:         true,
-            downloadFilename:   'users_export',
-            downloadFormat:     'xlsx',
-            paginationMode:     'server', // 'server' або 'client'
-        }
-    }));
-};
-
-document.addEventListener('DOMContentLoaded', init);
 ```
 
-### Виклик у React
+Приклад обгортки в Next.js / React:
 
-```javascript
+```tsx
 'use client';
 
-import { useMemo } from 'react';
-import { VueDataTableWrapper } from '@/app/common/components/datatable-primevue';
+import { useEffect, useMemo, useRef } from 'react';
+import {
+  mountUniversalTable,
+  unmountUniversalTable,
+} from 'yii-datatable/prime-datatable-react.es.js';
 
+export default function PartiesTable() {
+  const rootRef = useRef(null);
+  const instanceIdRef = useRef('');
 
-export default function TestPage() {
   const config = useMemo(() => ({
     requestUrl: '/api/v1/registry/parties/api/list',
     storageKey: 'my-test-table',
     columns: [
-      { name: 'edrpou_code', title: 'Код ЄДРПОУ', visible: true, sortable: true },
-      {name: 'object_type', title: 'Тип об\'єкту', visible: true, sortable: true},
-      {name: 'name_edr', title: 'Назва ЮО (ЄДР ЮО)', visible: true, sortable: true},
+      { name: 'edrpou_code', title: 'Код ЄДРПОУ', sortable: true },
+      { name: 'name_edr', title: 'Назва ЮО (ЄДР ЮО)', sortable: true },
     ],
     filters: [
-      { name: 'edrpou_code', type: 'string', title: 'Код ЄДРПОУ', visible: true },
-      { name: 'object_type', type: 'string', title: 'Тип об\'єкту', visible: true },
-      { name: 'name_edr', type: 'string', title: 'Назва ЮО (ЄДР ЮО)', visible: true },
+      { name: 'edrpou_code', type: 'string', title: 'Код ЄДРПОУ' },
+      { name: 'name_edr', type: 'string', title: 'Назва ЮО (ЄДР ЮО)' },
     ],
+    paginationMode: 'server',
     showDownload: false,
     scrollable: true,
     filtersExpanded: false,
-    downloadFormat: 'csv',
-    downloadFilename: 'party_registry_export',
-    maxRowsPerFile: 30000,
   }), []);
 
-  return (
-          <div>
-            <h1>Таблиця для тестування компонента DataTable primeVue</h1>
-            <VueDataTableWrapper config={config} />
-          </div>
-  );
+  useEffect(() => {
+    if (!rootRef.current) return;
+    instanceIdRef.current = mountUniversalTable(rootRef.current, config);
+    return () => {
+      if (instanceIdRef.current) {
+        unmountUniversalTable(instanceIdRef.current);
+      }
+    };
+  }, [config]);
+
+  return <div ref={rootRef} />;
 }
 ```
 
@@ -476,621 +248,372 @@ export default function TestPage() {
 
 ## Конфігурація
 
-### Загальні параметри
+Об’єкт `detail` події `datatable:setConfig` (тип `TableConfig`):
 
-| Параметр | Тип                             | За замовч.   | Опис                                                           |
-|---|---------------------------------|--------------|----------------------------------------------------------------|
-| `requestUrl` | `string`                        | —            | URL для POST-запиту даних таблиці                              |
-| `storageKey` | `string`                        | —            | Унікальний ключ для збереження стану в `localStorage`          |
-| `columns` | `ColumnConfig[]`                | —            | Масив конфігурацій колонок                                     |
-| `filters` | `FilterConfig[]`                | `[]`         | Масив конфігурацій фільтрів                                    |
-| `order` | `Record<string, 'asc'\|'desc'>` | `{}`         | Сортування за замовчуванням                                    |
-| `showDownload` | `boolean`                       | `false`      | Показати кнопку "Завантажити"                                  |
-| `filtersExpanded` | `boolean`                       | `true`       | Панель фільтрів розгорнута за замовчуванням                    |
-| `rowsPerPageOptions` | `number[]`                      | `[10,25,50]` | Варіанти кількості рядків на сторінці                          |
-| `scrollable` | `boolean`                       | `true`       | Увімкнути верхній/нижній скролбар                              |
-| `toolbarStart` | `string`                        | `''`         | HTML-рядок для лівої частини тулбара                           |
-| `downloadFilename` | `string`                        | `'export'`   | Назва файлу без розширення                                     |
-| `downloadFormat` | `'xlsx'\|'csv'`                 | `'xlsx'`     | Формат файлу при завантаженні                                  |
-| `paginationMode` | `'server'\|'client'`            | `'server'`   | Режим пагінації (див. [Режими роботи](#режими-роботи-таблиці)) |
-| `showColumnsButton` |  `boolean`              | `'true'`     | Показати кнопку "Колонки"                                      |
+| Параметр | Тип | За замовч. | Опис |
+|----------|-----|------------|------|
+| `requestUrl` | `string` | — | URL для POST даних таблиці |
+| `storageKey` | `string` | — | Унікальний ключ стану в localStorage (`udt_state_{storageKey}`) |
+| `columns` | `ColumnConfig[]` | — | Колонки |
+| `filters` | `FilterConfig[]` | `[]` | Фільтри |
+| `order` | `Record<string, 'asc' \| 'desc'>` | `{}` | Сортування за замовчуванням (береться перший ключ) |
+| `showDownload` | `boolean` | `false` | Кнопка «Завантажити» |
+| `showColumnsButton` | `boolean` | `true` | Кнопка «Колонки» |
+| `filtersExpanded` | `boolean` | `true` | Панель фільтрів розгорнута |
+| `rowsPerPageOptions` | `number[]` | `[10, 25, 50, 100]`* | Варіанти кількості рядків. Перший елемент — стартове значення |
+| `scrollable` | `boolean` | `true` | Верхній кастомний скролбар (нижній є завжди) |
+| `toolbarStart` | `string` | `''` | HTML у лівій частині тулбара |
+| `downloadFilename` | `string` | `'export'` | Ім’я файлу без розширення |
+| `downloadFormat` | `'xlsx' \| 'csv'` | `'xlsx'` | Формат експорту |
+| `paginationMode` | `'server' \| 'client'` | `'server'` | Режим пагінації |
+| `requestParams` | `Record<string, unknown>` | `{}` | Додаткові поля, які мерджаться в `filters` кожного запиту (дані й експорт) |
+| `maxRowsPerFile` | `number` | `30000` | Ліміт рядків на один файл експорту; при перевищенні — ZIP |
 
+\* У самому компоненті fallback — `[10, 25, 50]`. Обгортки `main.js` / `entry-react.ts` підставляють `[10, 25, 50, 100]`.
+
+`requestParams` зручні для постійних умов, яких немає у UI (наприклад `{ registry_id: 42 }`). Вони йдуть у тіло як частина `filters` і перекриваються значеннями з панелі фільтрів при однаковому ключі.
 
 ---
 
-### Колонки
+## Колонки
 
-Кожна колонка є об'єктом типу `ColumnConfig`:
+Тип `ColumnConfig`:
 
-| Поле | Тип | Обов'язк. | Опис |
-|---|---|---|---|
-| `name` | `string` | Так | Ключ поля у даних з сервера |
-| `title` | `string` | Так | Заголовок колонки |
-| `visible` | `boolean` | Ні | Видима за замовчуванням (за замовч. `true`) |
+| Поле | Тип | Обов’язк. | Опис |
+|------|-----|-----------|------|
+| `name` | `string` | Так | Ключ поля в рядку даних |
+| `title` | `string` | Ні | Заголовок. Без нього колонка все одно рендериться |
+| `visible` | `boolean` | Ні | Видима за замовчуванням (`true`) |
 | `sortable` | `boolean` | Ні | Дозволити сортування |
 | `width` | `string` | Ні | CSS-ширина (`'150px'`, `'10%'`) |
-| `type` | `'computed'` | Ні | Тип колонки (тільки `'computed'`) |
-| `fields` | `string[]` | Ні | Поля для склеювання (тільки для `type: 'computed'`) |
-| `value` | `(data) => string` | Ні | Функція-рендерер (підтримує HTML) |
-| `class` | `string` | Ні | CSS-клас для комірок тіла |
-| `headerClass` | `string` | Ні | CSS-клас для заголовка |
-| `bodyClass` | `string` | Ні | CSS-клас для тіла (alias до `class`) |
-| `footerClass` | `string` | Ні | CSS-клас для футера |
+| `type` | `'computed'` | Ні | Склеювання кількох полів |
+| `fields` | `string[]` | Ні | Поля для `type: 'computed'` |
+| `value` | `(data) => string \| string[]` | Ні | Рендерер; результат вставляється через `v-html` |
+| `class` | `string` | Ні | CSS-клас комірок тіла |
+| `headerClass` | `string` | Ні | CSS-клас заголовка |
+| `bodyClass` | `string` | Ні | CSS-клас тіла (має пріоритет над `class`) |
+| `footerClass` | `string` | Ні | CSS-клас футера |
+| `attributes.class` | `string` | Ні | Alias до `class`, якщо `class` не задано |
+
+Колонка з `name: 'actions'` не вимикається в попапі «Колонки» (чекбокс `disabled`). Колонки `type: 'computed'` завжди видимі.
 
 ---
 
-### Фільтри
+## Фільтри
 
-Кожен фільтр є об'єктом типу `FilterConfig`:
+Тип `FilterConfig`:
 
-| Поле | Тип | Обов'язк. | Опис |
-|---|---|---|---|
-| `name` | `string` | Так | Ключ фільтра (передається на сервер) |
-| `title` | `string` | Так | Підпис фільтра |
-| `type` | `string` | Так | Тип фільтра (див. нижче) |
+| Поле | Тип | Обов’язк. | Опис |
+|------|-----|-----------|------|
+| `name` | `string` | Так | Ключ фільтра (йде на сервер) |
+| `title` | `string` | Так | Підпис |
+| `type` | `FilterType` | Так | Див. типи нижче |
 | `visible` | `boolean` | Ні | Видимий за замовч. (`true`) |
-| `placeholder` | `string` | Ні | Підказка у полі |
-| `options` | `any[]` | Ні | Список опцій (для `select`, `multiselect`) |
-| `optionLabel` | `string` | Ні | Поле для відображення опції (для `multiselect`) |
-| `optionValue` | `string` | Ні | Поле значення опції (для `multiselect`) |
-| `placeholderFrom` | `string` | Ні | Підказка для поля "від" (для `range`) |
-| `placeholderTo` | `string` | Ні | Підказка для поля "до" (для `range`) |
+| `inToolbar` | `boolean` | Ні | Рендерить фільтр у тулбарі як Select, а не в панелі. Завжди видимий, не потрапляє в шестерню |
+| `defaultValue` | `unknown` | Ні | Стартове значення, якщо в localStorage порожньо. Застосовується для `inToolbar` |
+| `placeholder` | `string` | Ні | Підказка в полі |
+| `options` | `array` | Ні | Опції для `select` / `multiselect` / `select-with-other` / toolbar-select |
+| `optionLabel` | `string` | Ні | Поле підпису об’єкта-опції (за замовч. `label`) |
+| `optionValue` | `string` | Ні | Поле значення об’єкта-опції (за замовч. `value`) |
+| `placeholderFrom` / `placeholderTo` | `string` | Ні | Підказки «від» / «до» для `range` |
+| `otherPlaceholder` | `string` | Ні | Підказка текстового поля в `select-with-other` |
+| `otherLabel` | `string` | Ні | Підпис опції «Інше» (за замовч. `'Інше'`). Також спрацьовує значення `'other'` |
+| `colSpan` | `2 \| 3` | Ні | Скільки колонок гріда зайняти |
+| `minWidth` | `string` | Ні | Мінімальна ширина toolbar-select (за замовч. `380px`) |
 
-### Додаткові налаштування фільтрів
-* Можна задати параметр "inToolbar: true" і тоді фільтр перенесеться в "toolbarStart" для такого фільтра можна задати параметр "defaultValue: 'VALUE'" і буде обране значення за замовчуванням
+`options` нормалізуються в `{ label, value }`. Підтримуються:
 
-### Експорт
+- `['Активний', 'Неактивний']`
+- `[{ label: 'Київська', value: 1 }]`
+- `[{ name: 'Категорія A', id: 'A' }]` разом з `optionLabel: 'name'`, `optionValue: 'id'`
 
-Компонент підтримує експорт даних у формати XLSX та CSV. При натисканні кнопки «Завантажити»:
+Приховані фільтри (`visible: false`) не потрапляють у запит і в чіпи. Увімкнути їх можна шестернею біля кнопки «Фільтри».
 
-1. Робиться POST-запит на `{requestUrl}-export`
-2. Сервер повертає JSON з даними
-3. Фронтенд генерує файл (xlsx або csv)
+---
 
-Компонент при досягненні ліміту в 30000 записів розбиває таблицю на декілька файлів і архівує їх в ZIP та вивантажує архів з декількома файлами.
-Можна задати ліміт рядків на 1 файл при ініцілізації компонента:
+## Типи колонок з прикладами
+
+### Звичайна колонка
+
 ```js
-maxRowsPerFile: 10000
+{ name: 'id', title: 'ID', sortable: true, width: '80px' }
 ```
-#### Формат відповіді сервера для експорту:
 
-```json
+### Колонка з вирівнюванням
+
+```js
 {
-  "columns": [
-    { "key": "id",    "header": "ID",    "width": 8  },
-    { "key": "name",  "header": "Назва", "width": 30 }
+  name: 'status',
+  title: 'Статус',
+  sortable: true,
+  bodyClass: 'text-center',
+  headerClass: 'text-center',
+}
+```
+
+Доступні утилітні класи: `text-center`, `text-left`, `text-right`.
+
+### Кастомний рендер (`value`, HTML)
+
+Результат рендериться як `v-html`. **Не вставляйте невідфільтрований користувацький контент.**
+
+```js
+{
+  name: 'full_name',
+  title: 'ПІБ',
+  sortable: true,
+  value: (row) => `<a href="/users/${row.id}" class="text-primary">${row.full_name}</a>`,
+}
+
+{
+  name: 'is_active',
+  title: 'Статус',
+  value: (row) => row.is_active
+    ? '<span class="success">Активний</span>'
+    : '<span class="failed">Неактивний</span>',
+}
+```
+
+### Обчислювана колонка
+
+Склеює `fields` через пробіл. Завжди видима.
+
+```js
+{
+  name: 'full_name',
+  title: 'ПІБ',
+  type: 'computed',
+  fields: ['last_name', 'first_name', 'middle_name'],
+}
+```
+
+### Прихована за замовчуванням
+
+```js
+{ name: 'created_at', title: 'Дата створення', visible: false, sortable: true }
+```
+
+---
+
+## Типи фільтрів з прикладами
+
+### `text` / `string` / `varchar`
+
+Одне текстове поле (`InputText`). У серверному режимі запит відкладається на 500 мс. Значення перед відправкою обрізається (`trim`).
+
+```js
+{ name: 'name', title: 'Назва', type: 'text', placeholder: 'Введіть назву...' }
+```
+
+### `integer`
+
+```js
+{ name: 'members_count', title: 'Кількість членів', type: 'integer' }
+```
+
+На сервер: `{ "members_count": 12 }`.
+
+### `select`
+
+Одиночний вибір. `options` — рядки або об’єкти.
+
+```js
+{
+  name: 'status',
+  title: 'Статус',
+  type: 'select',
+  placeholder: 'Оберіть статус...',
+  options: ['Активний', 'Неактивний', 'Заблокований'],
+}
+
+{
+  name: 'status_id',
+  title: 'Статус',
+  type: 'select',
+  optionLabel: 'label',
+  optionValue: 'value',
+  options: [
+    { label: 'Активний', value: 1 },
+    { label: 'Неактивний', value: 0 },
   ],
-  "rows": [
-    { "id": 1, "name": "Іван Іванов" },
-    { "id": 2, "name": "Марія Петрова" }
+}
+```
+
+### `multiselect`
+
+Чіпи, максимум 3 підписи одночасно (`maxSelectedLabels`).
+
+```js
+{
+  name: 'regions',
+  title: 'Регіони',
+  type: 'multiselect',
+  placeholder: 'Оберіть регіони...',
+  optionLabel: 'label',
+  optionValue: 'value',
+  options: [
+    { label: 'Київська', value: 1 },
+    { label: 'Харківська', value: 2 },
+    { label: 'Одеська', value: 3 },
   ],
-  "filename": "my_custom_filename"
 }
 ```
 
-| Поле | Тип | Опис |
-|---|---|---|
-| `columns[].key` | `string` | Ключ поля у рядку `rows` |
-| `columns[].header` | `string` | Заголовок колонки у файлі |
-| `columns[].width` | `number` | Ширина колонки у символах |
-| `rows` | `object[]` | Масив рядків даних |
-| `filename` | `string` | Опціонально — перевизначає назву файлу |
+На сервер: `{ "regions": [1, 3] }`.
 
-> HTML-теги у значеннях рядків автоматично очищуються перед записом у файл.
+### `select-with-other`
 
-> CSV-файл зберігається з UTF-8 BOM для коректного відкриття в Excel.
+Селект + текстове поле, яке з’являється, якщо обрано «Інше».
 
----
-
-## Всі типи колонок з прикладами
-
-### 1. Звичайна колонка (поле з даних)
-
-```javascript
+```js
 {
-    name: 'id',
-    title: 'ID',
-    sortable: true,
-    width: '80px',
+  name: 'source',
+  title: 'Джерело',
+  type: 'select-with-other',
+  placeholder: 'Оберіть...',
+  otherLabel: 'Інше',
+  otherPlaceholder: 'Вкажіть джерело...',
+  options: ['Реєстр', 'Заява', 'Інше'],
 }
 ```
 
----
+- Якщо обрано звичайну опцію — на сервер іде її значення (`{ "source": "Реєстр" }`).
+- Якщо обрано «Інше» / `other` / `otherLabel` — на сервер іде текст з додаткового поля.
+- У внутрішньому стані живуть ще ключі `{name}_select` і `{name}_other` (у запит не потрапляють як окремі фільтри, окрім основного `name`).
 
-### 2. Колонка із сортуванням та кастомним класом
+### `date`
 
-```javascript
-{
-    name: 'status',
-    title: 'Статус',
-    sortable: true,
-    bodyClass: 'text-center',
-    headerClass: 'text-center',
-}
+Календар. У UI формат **ДД-ММ-РРРР** (`dateFormat="dd-mm-yy"`). На сервер іде **YYYY-MM-DD** (з корекцією таймзони).
+
+```js
+{ name: 'created_at', title: 'Дата створення', type: 'date' }
 ```
 
----
-
-### 3. Колонка з функцією-рендерером (підтримує HTML)
-
-Якщо задана `value` — функція, її результат рендериться як `v-html`. Це дозволяє виводити посилання, значки, кнопки тощо.
-
-```javascript
-{
-    name: 'full_name',
-    title: 'ПІБ',
-    sortable: true,
-    value: (row) => {
-        return `<a href="/users/${row.id}" class="text-primary">${row.full_name}</a>`;
-    }
-}
-```
-
-```javascript
-{
-    name: 'is_active',
-    title: 'Статус',
-    value: (row) => {
-        return row.is_active
-            ? '<span class="success">Активний</span>'
-            : '<span class="failed">Неактивний</span>';
-    }
-}
-```
-
-```javascript
-// Кнопки дій
-{
-    name: 'actions',
-    title: 'Дії',
-    bodyClass: 'actions-column',
-    value: (row) => {
-        return `
-            <a href="/users/${row.id}/edit" title="Редагувати">
-                <svg>...</svg>
-            </a>
-            <a href="/users/${row.id}/delete" title="Видалити">
-                <svg>...</svg>
-            </a>
-        `;
-    }
-}
-```
-
----
-
-### 4. Обчислювана колонка (type: 'computed')
-
-Склеює кілька полів через пробіл. Завжди видима (не можна приховати).
-
-```javascript
-{
-    name: 'full_name',
-    title: 'ПІБ',
-    type: 'computed',
-    fields: ['last_name', 'first_name', 'middle_name'],
-}
-```
-
-```javascript
-// Адреса з кількох полів
-{
-    name: 'address',
-    title: 'Адреса',
-    type: 'computed',
-    fields: ['city', 'street', 'building'],
-}
-```
-
----
-
-### 5. Прихована за замовчуванням колонка
-
-Колонка є у списку, але не відображається. Користувач може увімкнути через "Колонки".
-
-```javascript
-{
-    name: 'created_at',
-    title: 'Дата створення',
-    visible: false,
-    sortable: true,
-}
-```
-
----
-
-### 6. Колонка з фіксованою шириною
-
-```javascript
-{
-    name: 'edrpou',
-    title: 'ЄДРПОУ',
-    width: '120px',
-    sortable: true,
-}
-```
-
----
-
-### Повний приклад масиву колонок
-
-```javascript
-const columns = [
-    {
-        name: 'id',
-        title: 'ID',
-        sortable: true,
-        width: '70px',
-    },
-    {
-        name: 'full_name',
-        title: 'ПІБ',
-        type: 'computed',
-        fields: ['last_name', 'first_name', 'middle_name'],
-    },
-    {
-        name: 'edrpou_code',
-        title: 'ЄДРПОУ',
-        sortable: true,
-        width: '120px',
-    },
-    {
-        name: 'status',
-        title: 'Статус',
-        value: (row) => {
-            const map = {
-                active:   '<span class="success">Активний</span>',
-                inactive: '<span class="failed">Неактивний</span>',
-                pending:  '<span style="color:#e8a51f">Очікує</span>',
-            };
-            return map[row.status] || row.status;
-        }
-    },
-    {
-        name: 'created_at',
-        title: 'Дата створення',
-        sortable: true,
-        visible: false,
-    },
-    {
-        name: 'actions',
-        title: 'Дії',
-        bodyClass: 'actions-column',
-        value: (row) => `
-            <a href="/parties/${row.id}" title="Переглянути">
-                <svg fill="currentColor" width="16" height="16" viewBox="0 0 24 24">
-                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-                </svg>
-            </a>
-            <a href="/parties/${row.id}/edit" title="Редагувати">
-                <svg fill="currentColor" width="16" height="16" viewBox="0 0 24 24">
-                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                </svg>
-            </a>
-        `,
-    },
-];
-```
-
----
-
-## Всі типи фільтрів з прикладами
-
-### 1. `text` / `string` / `varchar` — текстовий рядок
-
-Використовується для пошуку по рядку. Запит відкладається на 500 мс після введення (тільки в серверному режимі).
-
-```javascript
-{
-    name: 'name',
-    title: 'Назва',
-    type: 'text',
-    placeholder: 'Введіть назву...',
-}
-```
-
-```javascript
-{
-    name: 'edrpou_code',
-    title: 'ЄДРПОУ',
-    type: 'varchar',
-}
-```
-
-> Всі три типи (`text`, `string`, `varchar`) поводяться однаково — рендерять `InputText`.
-
----
-
-### 2. `integer` — ціле число
-
-```javascript
-{
-    name: 'year',
-    title: 'Рік',
-    type: 'integer',
-    placeholder: 'Введіть рік...',
-}
-```
-
-```javascript
-{
-    name: 'members_count',
-    title: 'Кількість членів',
-    type: 'integer',
-}
-```
-
-На сервер передається числове значення:
-```json
-{ "year": 2024 }
-```
-
----
-
-### 3. `select` — випадаючий список (одиночний вибір)
-
-```javascript
-{
-    name: 'status',
-    title: 'Статус',
-    type: 'select',
-    placeholder: 'Оберіть статус...',
-    options: ['Активний', 'Неактивний', 'Заблокований'],
-}
-```
-
-```javascript
-// Якщо опції — рядки, на сервер передається обраний рядок
-// { "status": "Активний" }
-```
-
-> `options` — просто масив рядків для `select`. Відображення і значення збігаються.
-
----
-
-### 4. `multiselect` — список з множинним вибором
-
-Відображає обрані значення як чіпи. Максимум 3 чіпи видно одночасно.
-
-```javascript
-{
-    name: 'regions',
-    title: 'Регіони',
-    type: 'multiselect',
-    placeholder: 'Оберіть регіони...',
-    optionLabel: 'label',
-    optionValue: 'value',
-    options: [
-        { label: 'Київська',    value: 1 },
-        { label: 'Харківська',  value: 2 },
-        { label: 'Одеська',     value: 3 },
-        { label: 'Дніпровська', value: 4 },
-        { label: 'Львівська',   value: 5 },
-    ],
-}
-```
-
-На сервер передається масив обраних значень:
-```json
-{ "regions": [1, 3, 5] }
-```
-
-```javascript
-// Простий multiselect зі рядковими значеннями
-{
-    name: 'categories',
-    title: 'Категорії',
-    type: 'multiselect',
-    optionLabel: 'name',
-    optionValue: 'id',
-    options: [
-        { id: 'A', name: 'Категорія A' },
-        { id: 'B', name: 'Категорія B' },
-        { id: 'C', name: 'Категорія C' },
-    ],
-}
-```
-
----
-
-### 5. `date` — вибір конкретної дати
-
-Формат що передається на сервер: `YYYY-MM-DD`.
-
-```javascript
-{
-    name: 'created_at',
-    title: 'Дата створення',
-    type: 'date',
-    placeholder: 'РРРР-ММ-ДД',
-}
-```
-
-```javascript
-{
-    name: 'birth_date',
-    title: 'Дата народження',
-    type: 'date',
-}
-```
-
-На сервер:
 ```json
 { "created_at": "2024-03-15" }
 ```
 
----
+### `date_range`
 
-### 6. `date_range` — діапазон дат
+Діапазон дат. Ручний ввід увімкнений. Запит іде лише коли заповнені **обидві** дати.
 
-Дозволяє обрати дві дати — початок і кінець. Ручний ввід вимкнений.
+На сервер: рядок `ДД.ММ.РРРР-ДД.ММ.РРРР`.
 
-```javascript
+```js
 {
-    name: 'registration_date',
-    title: 'Дата реєстрації',
-    type: 'date_range',
-    placeholder: 'ДД.ММ.РРРР - ДД.ММ.РРРР',
+  name: 'registration_date',
+  title: 'Дата реєстрації',
+  type: 'date_range',
+  placeholder: 'ДД.ММ.РРРР - ДД.ММ.РРРР',
 }
 ```
 
-На сервер передається рядок формату `ДД.ММ.РРРР-ДД.ММ.РРРР`:
 ```json
 { "registration_date": "01.01.2024-31.03.2024" }
 ```
 
----
+### `year`
 
-### 7. `year` — вибір року
+Календар у режимі року. На сервер — число.
 
-Відображає календар у режимі вибору року.
-
-```javascript
-{
-    name: 'report_year',
-    title: 'Рік звітності',
-    type: 'year',
-    placeholder: 'РРРР',
-}
+```js
+{ name: 'report_year', title: 'Рік звітності', type: 'year' }
 ```
 
-На сервер передається число:
 ```json
 { "report_year": 2024 }
 ```
 
----
+### `range`
 
-### 8. `range` — числовий діапазон (від / до)
+Два числові поля «від» / «до». За замовчуванням займає 2 колонки гріда.
 
-Відображає два поля: "від" і "до". Займає подвійну ширину у гриді фільтрів.
-
-```javascript
+```js
 {
-    name: 'amount',
-    title: 'Сума',
-    type: 'range',
-    placeholderFrom: 'Від',
-    placeholderTo: 'До',
+  name: 'amount',
+  title: 'Сума',
+  type: 'range',
+  placeholderFrom: 'Від',
+  placeholderTo: 'До',
 }
 ```
 
-```javascript
-{
-    name: 'members_count',
-    title: 'Кількість членів',
-    type: 'range',
-    placeholderFrom: 'Мінімум',
-    placeholderTo: 'Максимум',
-}
-```
+На сервер ідуть суфікси `_from` / `_to`. Порожнє поле не відправляється:
 
-На сервер передаються окремі ключи з суфіксами `_from` і `_to`:
 ```json
+{ "amount_from": 1000, "amount_to": 50000 }
+```
+
+### Фільтр у тулбарі
+
+```js
 {
-  "amount_from": 1000,
-  "amount_to":   50000
+  name: 'registry_id',
+  title: 'Реєстр',
+  type: 'select',
+  inToolbar: true,
+  defaultValue: 1,
+  minWidth: '280px',
+  options: [
+    { label: 'Основний', value: 1 },
+    { label: 'Архів', value: 2 },
+  ],
 }
 ```
 
-> Якщо заповнено лише одне поле — передається лише воно.
+Рендериться як `Select` ліворуч у тулбарі (поряд з `toolbarStart`). Не показується в панелі фільтрів і в шестерні.
 
----
+### Ширина у гріді
 
-### Прихований фільтр за замовчуванням
-
-```javascript
-{
-    name: 'internal_code',
-    title: 'Внутрішній код',
-    type: 'text',
-    visible: false,   // прихований, але доступний через шестерню
-}
+```js
+{ name: 'comment', title: 'Коментар', type: 'text', colSpan: 2 }
 ```
 
+`colSpan: 2` або `3`. Тип `range` і так розтягується на 2 колонки.
+
 ---
 
-### Повний приклад масиву фільтрів
+## Події
 
-```javascript
-const filters = [
-    {
-        name: 'name',
-        title: 'Назва',
-        type: 'text',
-        placeholder: 'Введіть назву...',
-    },
-    {
-        name: 'edrpou_code',
-        title: 'ЄДРПОУ',
-        type: 'varchar',
-        placeholder: '12345678',
-    },
-    {
-        name: 'status',
-        title: 'Статус',
-        type: 'select',
-        options: ['Зареєстрований', 'Ліквідований', 'В стадії ліквідації'],
-        placeholder: 'Оберіть статус...',
-    },
-    {
-        name: 'region_id',
-        title: 'Регіони',
-        type: 'multiselect',
-        optionLabel: 'label',
-        optionValue: 'value',
-        options: [
-            { label: 'Київська',   value: 1 },
-            { label: 'Львівська',  value: 2 },
-            { label: 'Одеська',    value: 3 },
-        ],
-        placeholder: 'Оберіть регіони...',
-    },
-    {
-        name: 'registration_date',
-        title: 'Дата реєстрації',
-        type: 'date_range',
-    },
-    {
-        name: 'report_year',
-        title: 'Рік звітності',
-        type: 'year',
-    },
-    {
-        name: 'founded_date',
-        title: 'Дата заснування',
-        type: 'date',
-    },
-    {
-        name: 'members_count',
-        title: 'Кількість членів',
-        type: 'range',
-        placeholderFrom: 'Від',
-        placeholderTo: 'До',
-    },
-    {
-        name: 'employee_count',
-        title: 'Кількість працівників',
-        type: 'integer',
-    },
-    {
-        name: 'internal_note',
-        title: 'Внутрішня позначка',
-        type: 'text',
-        visible: false,
-    },
-];
+Усі події — `CustomEvent` на `document`.
+
+### `datatable:setConfig`
+
+Ініціалізація або повна заміна конфігурації. `event.detail` — об’єкт `TableConfig` (див. таблицю вище).
+
+Після події компонент переініціалізує стан (з урахуванням `localStorage`) і завантажує дані.
+
+### `datatable:setFilter`
+
+Програмно виставити значення одного фільтра:
+
+```js
+document.dispatchEvent(new CustomEvent('datatable:setFilter', {
+  detail: { name: 'status', value: 'Активний' },
+}));
+```
+
+Для `date_range` передавайте масив дат. У серверному режимі після зміни одразу йде запит (сторінка скидається на 1).
+
+### `datatable:dataLoaded`
+
+Викидається після успішного `POST` на `requestUrl`, якщо у відповіді є `results`. `event.detail` — повна відповідь API.
+
+```js
+document.addEventListener('datatable:dataLoaded', (e) => {
+  console.log(e.detail.results.count);
+});
 ```
 
 ---
 
 ## API сервера
 
+Запити йдуть через `fetch` з `method: 'POST'`, `credentials: 'include'` і заголовками з авторизації (див. [Авторизація запитів](#авторизація-запитів)).
+
 ### Запит даних (серверний режим)
 
-**URL:** `POST {requestUrl}`
-
-**Тіло запиту:**
+URL: `POST {requestUrl}`
 
 ```json
 {
@@ -1109,26 +632,21 @@ const filters = [
     "members_count_from": 10,
     "members_count_to": 500,
     "report_year": 2024,
-    "founded_date": "2020-06-15"
+    "founded_date": "2020-06-15",
+    "registry_id": 42
   }
 }
 ```
+
+`filters` = `{ ...requestParams, ...очищені значення з UI }`. Порожні значення не відправляються. Невидимі фільтри теж пропускаються.
+
+`pager.page` — 1-based. `order` — один ключ: поточне `sortField` / `sortOrder`.
 
 ### Запит даних (клієнтський режим)
 
-**URL:** `POST {requestUrl}`
+Той самий URL і тіло, але **без** `pager`. `order` і `filters` (включно з `requestParams`) все одно відправляються.
 
-**Тіло запиту:** (без `pager`)
-
-```json
-{
-  "order": {
-    "created_at": "desc"
-  }
-}
-```
-
-> **Важливо:** У клієнтському режимі сервер ігнорує `pager` (якщо він є) і повертає ВСІ дані.
+Сервер має повернути повний набір рядків для подальшої клієнтської фільтрації / пагінації. Після першого завантаження зміни фільтрів на сервер більше не ходять — вони застосовуються локально.
 
 ### Відповідь даних (обидва режими)
 
@@ -1140,7 +658,7 @@ const filters = [
         "id": 1,
         "name": "Організація 1",
         "edrpou_code": "12345678",
-        "status": "Активний
+        "status": "Активний"
       }
     ],
     "count": 142
@@ -1149,19 +667,30 @@ const filters = [
 ```
 
 | Поле | Тип | Опис |
-|---|---|---|
-| `results.list` | `object[]` | Масив рядків (для серверного режиму — поточна сторінка, для клієнтського — всі дані) |
-| `results.count` | `number` | Загальна кількість записів (для пагінатора) |
+|------|-----|------|
+| `results.list` | `object[]` | Рядки: у серверному режимі — поточна сторінка, у клієнтському — увесь набір |
+| `results.count` | `number` | Загальна кількість (для пагінатора в серверному режимі). У клієнтському режимі береться `list.length` |
+
+Якщо `results` немає — таблиця не оновлюється.
 
 ---
 
-### Запит експорту
+## Експорт
 
-**URL:** `POST {requestUrl}-export`
+Кнопка «Завантажити» (`showDownload: true`) **завжди** ходить на сервер, в обох режимах пагінації.
 
-> Наприклад, якщо `requestUrl = '/api/v1/users/list'`, то запит піде на `/api/v1/users/list-export`.
+URL: `POST {requestUrl}-export`
 
-**Тіло запиту:**
+Приклад: `requestUrl = '/api/v1/users/list'` → `/api/v1/users/list-export`.
+
+### Алгоритм на клієнті
+
+1. Службовий запит з `limit: 1`, щоб дізнатися `total`.
+2. Якщо `total === 0` — alert «Немає даних для вивантаження.»
+3. Якщо `total <= maxRowsPerFile` — один файл з `limit` / `offset: 0`.
+4. Якщо більше — цикл з `offset = i * maxRowsPerFile`, файли пакуються в ZIP (JSZip) і скачується `{downloadFilename}.zip`.
+
+### Тіло запиту
 
 ```json
 {
@@ -1171,205 +700,245 @@ const filters = [
   },
   "order": {
     "name": "asc"
-  }
+  },
+  "limit": 30000,
+  "offset": 0
 }
 ```
 
----
+`filters` знову = `{ ...requestParams, ...UI-фільтри }`. Поля `limit` і `offset` додаються клієнтом.
 
-### Відповідь експорту
+### Відповідь
+
+Перший (лічильний) запит має повернути хоча б:
+
+```json
+{ "total": 85420 }
+```
+
+Повні відповіді з даними:
 
 ```json
 {
   "columns": [
-    { "key": "id",            "header": "ID",              "width": 8  },
-    { "key": "name",          "header": "Назва",           "width": 40 },
-    { "key": "edrpou_code",   "header": "ЄДРПОУ",         "width": 15 },
-    { "key": "status",        "header": "Статус",          "width": 20 },
-    { "key": "region",        "header": "Регіон",          "width": 25 },
-    { "key": "created_at",    "header": "Дата створення",  "width": 20 }
+    { "key": "id", "header": "ID", "width": 8 },
+    { "key": "name", "header": "Назва", "width": 40 },
+    { "key": "edrpou_code", "header": "ЄДРПОУ", "width": 15 }
   ],
   "rows": [
-    {
-      "id": 1,
-      "name": "Організація 1",
-      "edrpou_code": "12345678",
-      "status": "Активний",
-      "region": "Київська",
-      "created_at": "2024-01-15"
-    }
+    { "id": 1, "name": "Організація 1", "edrpou_code": "12345678" }
   ],
-  "filename": "organizations_2024"
+  "filename": "organizations_2024",
+  "total": 85420
 }
 ```
 
-| Поле | Тип | Обов'язк. | Опис |
-|---|---|---|---|
-| `columns` | `array` | Так | Список колонок файлу |
-| `columns[].key` | `string` | Так | Ключ поля у `rows` |
+| Поле | Тип | Обов’язк. | Опис |
+|------|-----|-----------|------|
+| `columns` | `array` | Так* | Колонки файлу |
+| `columns[].key` | `string` | Так | Ключ у `rows` |
 | `columns[].header` | `string` | Так | Заголовок у файлі |
-| `columns[].width` | `number` | Ні | Ширина колонки у символах (за замовч. 20) |
-| `rows` | `array` | Так | Рядки даних |
-| `filename` | `string` | Ні | Перевизначає назву файлу (без розширення) |
+| `columns[].width` | `number` | Ні | Ширина в символах (за замовч. 40) |
+| `rows` | `array` | Так* | Рядки порції |
+| `filename` | `string` | Ні | Перевизначає ім’я файлу (без розширення) |
+| `total` | `number` | Так для count-запиту | Загальна кількість рядків експорту |
+
+\* Якщо `columns` / `rows` немає, XLSX отримає аркуш «Немає даних», CSV — порожній файл.
+
+HTML у комірках очищується перед записом. CSV пишеться з UTF-8 BOM.
+
+Якщо `filename` з відповіді й `downloadFilename` порожні або дорівнюють `'export'`, клієнт підставляє ім’я `party_summary_info`. Для ZIP ім’я архіву — `downloadFilename`, а частини всередині — `{baseName}_part1.xlsx` тощо.
 
 ---
 
 ## Повний приклад ініціалізації
 
-```javascript
+```js
 const columns = [
-    { name: 'id',            title: 'ID',              sortable: true, width: '70px' },
-    { name: 'full_name',     title: 'ПІБ',             type: 'computed', fields: ['last_name', 'first_name'] },
-    { name: 'edrpou_code',   title: 'ЄДРПОУ',         sortable: true },
-    { name: 'email',         title: 'Email',           sortable: true },
-    { name: 'status',        title: 'Статус',          value: (row) => row.is_active ? '<span class="success">Активний</span>' : '<span class="failed">Неактивний</span>' },
-    { name: 'created_at',    title: 'Дата реєстрації', sortable: true, visible: false },
-    {
-        name: 'actions',
-        title: 'Дії',
-        bodyClass: 'actions-column',
-        value: (row) => `<a href="/users/${row.id}/edit">Редагувати</a>`,
-    },
+  { name: 'id', title: 'ID', sortable: true, width: '70px' },
+  { name: 'full_name', title: 'ПІБ', type: 'computed', fields: ['last_name', 'first_name'] },
+  { name: 'edrpou_code', title: 'ЄДРПОУ', sortable: true },
+  { name: 'email', title: 'Email', sortable: true },
+  {
+    name: 'status',
+    title: 'Статус',
+    value: (row) => row.is_active
+      ? '<span class="success">Активний</span>'
+      : '<span class="failed">Неактивний</span>',
+  },
+  { name: 'created_at', title: 'Дата реєстрації', sortable: true, visible: false },
+  {
+    name: 'actions',
+    title: 'Дії',
+    bodyClass: 'actions-column',
+    value: (row) => `<a href="/users/${row.id}/edit">Редагувати</a>`,
+  },
 ];
 
 const filters = [
-    { name: 'search',       title: 'Пошук',        type: 'text',        placeholder: 'Назва або ЄДРПОУ...' },
-    { name: 'status',       title: 'Статус',        type: 'select',      options: ['Активний', 'Неактивний'] },
-    { name: 'region_id',    title: 'Регіони',       type: 'multiselect', optionLabel: 'label', optionValue: 'value', options: [{ label: 'Київська', value: 1 }, { label: 'Львівська', value: 2 }] },
-    { name: 'created_date', title: 'Дата реєстр.',  type: 'date_range' },
-    { name: 'year',         title: 'Рік',           type: 'year' },
-    { name: 'amount',       title: 'Сума',          type: 'range',       placeholderFrom: 'Від', placeholderTo: 'До' },
+  { name: 'search', title: 'Пошук', type: 'text', placeholder: 'Назва або ЄДРПОУ...' },
+  { name: 'status', title: 'Статус', type: 'select', options: ['Активний', 'Неактивний'] },
+  {
+    name: 'region_id',
+    title: 'Регіони',
+    type: 'multiselect',
+    optionLabel: 'label',
+    optionValue: 'value',
+    options: [
+      { label: 'Київська', value: 1 },
+      { label: 'Львівська', value: 2 },
+    ],
+  },
+  {
+    name: 'source',
+    title: 'Джерело',
+    type: 'select-with-other',
+    options: ['Реєстр', 'Заява', 'Інше'],
+    otherPlaceholder: 'Вкажіть джерело...',
+  },
+  { name: 'created_date', title: 'Дата реєстр.', type: 'date_range' },
+  { name: 'year', title: 'Рік', type: 'year' },
+  { name: 'amount', title: 'Сума', type: 'range', placeholderFrom: 'Від', placeholderTo: 'До' },
+  {
+    name: 'registry_id',
+    title: 'Реєстр',
+    type: 'select',
+    inToolbar: true,
+    defaultValue: 1,
+    options: [
+      { label: 'Основний', value: 1 },
+      { label: 'Архів', value: 2 },
+    ],
+  },
 ];
 
-const init = () => {
-    document.dispatchEvent(new CustomEvent('datatable:setConfig', {
-        detail: {
-            requestUrl:         '/api/v1/registry/parties/api/list',
-            storageKey:         'party_registry_list',
-            columns:            columns,
-            filters:            filters,
-            order:              { edrpou_code: 'asc' },
-            showDownload:       true,
-            filtersExpanded:    false,
-            rowsPerPageOptions: [10, 25, 50, 100],
-            scrollable:         true,
-            downloadFilename:   'party_registry_export',
-            downloadFormat:     'xlsx',
-            paginationMode:     'server', // або 'client'
-            toolbarStart: `
-                <div class="flex gap-2">
-                    <a href="/parties/create" class="p-button p-button-secondary p-button-sm">
-                        Додати вручну
-                    </a>
-                </div>
-            `,
-        }
-    }));
-};
-
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  document.dispatchEvent(new CustomEvent('datatable:setConfig', {
+    detail: {
+      requestUrl: '/api/v1/registry/parties/api/list',
+      storageKey: 'party_registry_list',
+      columns,
+      filters,
+      order: { edrpou_code: 'asc' },
+      showDownload: true,
+      showColumnsButton: true,
+      filtersExpanded: false,
+      rowsPerPageOptions: [10, 25, 50, 100],
+      scrollable: true,
+      downloadFilename: 'party_registry_export',
+      downloadFormat: 'xlsx',
+      paginationMode: 'server',
+      requestParams: { context: 'admin' },
+      maxRowsPerFile: 30000,
+      toolbarStart: `
+        <div class="flex gap-2">
+          <a href="/parties/create" class="p-button p-button-secondary p-button-sm">
+            Додати вручну
+          </a>
+        </div>
+      `,
+    },
+  }));
+});
 ```
 
 ---
 
 ## Збереження стану
 
-Стан таблиці автоматично зберігається у `localStorage` за ключем `udt_state_{storageKey}`.
-
-**Що зберігається:**
+Ключ: `udt_state_{storageKey}`.
 
 | Поле | Опис |
-|---|---|
-| `isFiltersPanelOpen` | Відкрита / закрита панель фільтрів |
-| `isScrollEnabled` | Увімкнений / вимкнений кастомний скролбар |
-| `lazyParams` | Поточна сторінка, кількість рядків, сортування |
-| `columns` | Видимість кожної колонки |
+|------|------|
+| `isFiltersPanelOpen` | Панель фільтрів відкрита / закрита |
+| `isScrollEnabled` | Верхній скролбар увімкнений |
+| `lazyParams` | Сторінка, кількість рядків, поле і напрям сортування |
+| `columns` | Видимість кожної колонки (`name` + `visible`) |
 | `filtersVisibility` | Видимість кожного фільтра |
-| `activeFilters` | Поточні значення всіх фільтрів |
+| `activeFilters` | Поточні значення фільтрів (дати серіалізуються в ISO) |
 
-> Щоб скинути стан — видаліть ключ з `localStorage`:
-> ```javascript
-> localStorage.removeItem('udt_state_party_registry_list');
-> ```
+Скинути стан:
+
+```js
+localStorage.removeItem('udt_state_party_registry_list');
+```
+
+Якщо `storageKey` порожній або рядок `'undefined'` — ні читання, ні запис, ні завантаження даних не виконуються.
+
+---
+
+## Авторизація запитів
+
+Кожен `fetch` (дані й експорт) додає:
+
+| Заголовок | Звідки |
+|-----------|--------|
+| `Content-Type: application/json` | завжди |
+| `Accept: application/json` | завжди |
+| `Authorization: Bearer …` | `localStorage.getItem('authKey')`, якщо є |
+| `X-CSRF-Token` | `<meta name="csrf-token" content="…">`, якщо є |
+
+Також `credentials: 'include'` (куки сесії).
 
 ---
 
 ## Кастомна тема
 
-Тему можна змінити через `definePreset` у `main.ts`. Нижче приклад зміни основного кольору:
+Тема задається в `src/main.js` і `src/entry-react.ts` через `definePreset` на базі Aura. Темна тема вимкнена (`darkModeSelector: 'none'`).
 
-```typescript
+```js
 import Aura from '@primevue/themes/aura';
 import { definePreset } from '@primevue/themes';
 
 const MyTheme = definePreset(Aura, {
-    semantic: {
-        primary: {
-            50:  '#f0fdf4',
-            100: '#dcfce7',
-            200: '#bbf7d0',
-            300: '#86efac',
-            400: '#4ade80',
-            500: '#16a34a',  // основний колір
-            600: '#15803d',
-            700: '#166534',
-            800: '#14532d',
-            900: '#052e16',
-            950: '#021808',
-        },
-        highlight: {
-            background:      '#dcfce7',
-            focusBackground: '#bbf7d0',
-            color:           '#16a34a',
-            focusColor:      '#14532d',
-        }
-    }
+  semantic: {
+    primary: {
+      50: '#f0f9ff',
+      500: '#0369a1',
+      600: '#0284c7',
+      950: '#032f4c',
+    },
+    highlight: {
+      background: '#e0f2fe',
+      focusBackground: '#bae6fd',
+      color: '#0369a1',
+      focusColor: '#0c4a6e',
+    },
+  },
 });
 ```
 
-Доступні базові теми: `Aura`, `Lara`, `Nora`.
+Доступні базові пресети PrimeVue 4: **Aura**, **Lara**, **Nora**.
 
 ---
 
-## CSS-класи для значень колонок
+## CSS-класи
 
-У функції `value` можна використовувати вбудовані стилізовані класи:
+У `value()` можна використовувати вбудовані класи:
 
 ```css
-/* Зелений текст — успіх */
 .success { color: #0a570a; font-weight: 600; }
-
-/* Червоний текст — помилка */
 .failed  { color: #bb0e4a; font-weight: 600; }
-
-/* Колонка з кнопками дій */
 .actions-column { width: max-content; }
+.text-center { text-align: center; }
+.text-left   { text-align: left; }
+.text-right  { text-align: right; }
 ```
 
-```javascript
-// Приклад використання
-{
-    name: 'payment_status',
-    title: 'Статус оплати',
-    value: (row) => {
-        if (row.payment_status === 'paid')    return '<span class="success">Оплачено</span>';
-        if (row.payment_status === 'failed')  return '<span class="failed">Помилка</span>';
-        return row.payment_status;
-    }
-}
-```
+Над таблицею, коли є активні фільтри, показується бар **«Застосовані фільтри»** з чіпами. Хрестик на чіпі скидає один фільтр, кнопка «Скинути всі» очищає фільтри й глобальний пошук.
 
 ---
 
 ## Важливі особливості та обмеження
 
-- **Нижній скролбар** завжди видимий (при необхідності).
-- **Верхній скролбар** керується через налаштування колонок (опція `scrollable`).
-- **`value()` функція** використовує `v-html` — не вставляйте невідфільтрований користувацький контент.
-- **Колонки типу `computed`** завжди видимі (не можна приховати через UI).
-- **Клієнтський режим** (`paginationMode: 'client'`) не підтримує фільтрацію на стороні сервера — всі фільтри застосовуються на клієнті.
-- **Серверний режим** (`paginationMode: 'server'`) виконує окремий запит при кожній зміні сторінки, сортуванні або фільтрі.
-- **Глобальний пошук** доступний **ТІЛЬКИ** в клієнтському режимі.
-- При зміні режиму роботи (`server` ↔ `client`) необхідно оновити сторінку або переініціалізувати компонент.
-- **Експорт даних** працює однаково в обох режимах, але в клієнтському режимі фільтри не передаються на сервер (експортуються всі дані).
-
+- Нижній скролбар завжди присутній; верхній вмикається опцією «Верхній скрол» у попапі колонок (залежить від `scrollable` / збереженого стану).
+- Нативний горизонтальний скрол таблиці сховано — використовуються кастомні бари.
+- `value()` йде в `v-html` — XSS на совісті того, хто формує HTML.
+- Колонки `computed` завжди видимі. Колонка `actions` не вимикається з UI.
+- У клієнтському режимі глобальний пошук дивиться лише на видимі колонки і ігнорує `actions`. HTML у комірках перед пошуком знімається.
+- Експорт не бере рядки з DOM: завжди `POST {requestUrl}-export` з поточними фільтрами, навіть у `paginationMode: 'client'`.
+- Debounce 500 мс працює лише в серверному режимі.
+- `date_range` відправляється, лише коли обрані обидві дати.
+- При зміні `paginationMode` потрібна повторна ініціалізація (`datatable:setConfig` або перезавантаження сторінки).
+- Пагінатор: ліворуч — «Показано з {first} по {last} із {totalRecords} записів», по центру — сторінки, праворуч — вибір кількості рядків (на вузьких екранах — у колонку).
+- React-збірка реєструє директиву `v-tooltip` (підказка на шестерні фільтрів).

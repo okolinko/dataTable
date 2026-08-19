@@ -235,13 +235,13 @@
                 :key="'date-' + filter.name"
                 :inputId="'field-' + filter.name"
                 v-model="activeFilters[filter.name]"
-                dateFormat="yy-mm-dd"
+                dateFormat="dd-mm-yy"
                 showIcon
                 iconDisplay="input"
                 showClear
                 @update:modelValue="onFilterDateUpdate"
                 @clear="onFilterClear"
-                :placeholder="filter.placeholder || 'РРРР-ММ-ДД'"
+                :placeholder="filter.placeholder || 'ДД-ММ-РРРР'"
             />
 
             <DatePicker
@@ -373,7 +373,7 @@
           @sort="onClientSort"
           :sortField="clientSortField"
           :sortOrder="clientSortOrder"
-          paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+          paginatorTemplate="CurrentPageReport FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
           :rowsPerPageOptions="effectiveRowsPerPageOptions"
           currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
       >
@@ -1561,5 +1561,49 @@ onBeforeUnmount(() => {
 .select-with-other-wrapper :deep(.p-select) {
   width: 100% !important;
   max-width: 100% !important;
+}
+
+/* ====================== ПАГІНАТОР ====================== */
+:deep(.p-paginator) {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  gap: 0.25rem;
+  padding: 0.75rem 0.5rem;
+}
+
+:deep(.p-paginator .p-paginator-current) {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  white-space: nowrap;
+}
+
+:deep(.p-paginator .p-paginator-rpp-dropdown),
+:deep(.p-paginator > .p-select) {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  :deep(.p-paginator) {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  :deep(.p-paginator .p-paginator-current),
+  :deep(.p-paginator .p-paginator-rpp-dropdown),
+  :deep(.p-paginator > .p-select) {
+    position: static;
+    transform: none;
+  }
 }
 </style>

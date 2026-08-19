@@ -373,7 +373,7 @@
           @sort="onClientSort"
           :sortField="clientSortField"
           :sortOrder="clientSortOrder"
-          paginatorTemplate="CurrentPageReport FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
+          paginatorTemplate="CurrentPageReport RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
           :rowsPerPageOptions="effectiveRowsPerPageOptions"
           currentPageReportTemplate="Показано з {first} по {last} із {totalRecords} записів"
       >
@@ -383,7 +383,6 @@
               :field="col.name"
               :header="col.title"
               :sortable="col.sortable || false"
-              :class="col.bodyClass || col.class || ''"
               :headerClass="col.headerClass || ''"
               :bodyClass="col.bodyClass || col.class || ''"
               :footerClass="col.footerClass || ''"
@@ -428,7 +427,6 @@
               :field="col.name"
               :header="col.title"
               :sortable="col.sortable || false"
-              :class="col.bodyClass || col.class || ''"
               :headerClass="col.headerClass || ''"
               :bodyClass="col.bodyClass || col.class || ''"
               :footerClass="col.footerClass || ''"
@@ -1606,4 +1604,22 @@ onBeforeUnmount(() => {
     transform: none;
   }
 }
+
+/* Вирівнювання заголовків колонок (PrimeVue flex header) */
+:deep(th.p-datatable-header-cell.text-center .p-datatable-column-header-content) {
+  justify-content: center;
+}
+
+:deep(th.p-datatable-header-cell.text-left .p-datatable-column-header-content) {
+  justify-content: flex-start;
+}
+
+:deep(th.p-datatable-header-cell.text-right .p-datatable-column-header-content) {
+  justify-content: flex-end;
+}
+
+:deep(.p-datatable-thead th.text-center .p-datatable-column-header-content) {
+  justify-content: center;
+}
+
 </style>
